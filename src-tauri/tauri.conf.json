@@ -1,0 +1,31 @@
+{
+  "productName": "Claude Sessions",
+  "version": "0.1.0",
+  "identifier": "com.cyocun.claude-session-manager",
+  "build": {
+    "frontendDist": "../frontend"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "title": "Claude Sessions",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 500
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "app"],
+    "icon": [
+      "icons/icon.png"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    }
+  }
+}

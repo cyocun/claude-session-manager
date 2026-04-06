@@ -3,3 +3,5 @@ __pycache__/
 archive.json
 settings.json
 .DS_Store
+node_modules/
+src-tauri/target/
