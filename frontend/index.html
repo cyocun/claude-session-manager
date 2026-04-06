@@ -40,24 +40,128 @@
   <link rel="stylesheet" href="vendor/diff2html.min.css">
   <script src="vendor/diff2html.min.js"></script>
   <style>
-    html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-    .scrollbar-thin::-webkit-scrollbar { width: 5px; }
+    html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; -webkit-font-smoothing: antialiased; }
+    .scrollbar-thin::-webkit-scrollbar { width: 6px; }
     .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
     .scrollbar-thin::-webkit-scrollbar-thumb { border-radius: 3px; }
     .fade-in { animation: fadeIn 0.15s ease-in; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-    /* --- Light theme --- */
+    /* Titlebar drag region */
+    .titlebar-drag { user-select: none; }
+
+    /* macOS native-style buttons */
+    .mac-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+      padding: 3px 10px; border-radius: 5px; font-size: 12px; line-height: 1.4;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+      cursor: default; user-select: none; white-space: nowrap;
+      background: linear-gradient(180deg, rgba(255,255,255,0.17) 0%, rgba(255,255,255,0) 100%), var(--btn-bg);
+      border: 0.5px solid var(--btn-border);
+      color: var(--btn-text);
+      box-shadow: 0 0.5px 1px rgba(0,0,0,0.1), 0 0 0 0.5px rgba(0,0,0,0.05);
+    }
+    .mac-btn:hover { background: linear-gradient(180deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 100%), var(--btn-bg-hover); }
+    .mac-btn:active { background: var(--btn-bg-hover); box-shadow: inset 0 1px 2px rgba(0,0,0,0.1); }
+    .mac-btn-primary {
+      background: linear-gradient(180deg, rgba(255,255,255,0.17) 0%, rgba(255,255,255,0) 100%), var(--accent);
+      color: #fff; border-color: rgba(0,0,0,0.15);
+      box-shadow: 0 0.5px 1px rgba(0,0,0,0.15);
+    }
+    .mac-btn-primary:hover { filter: brightness(1.1); }
+    .mac-btn-primary:active { filter: brightness(0.9); box-shadow: inset 0 1px 2px rgba(0,0,0,0.2); }
+    .dark .mac-btn {
+      background: linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 100%), var(--btn-bg);
+      box-shadow: 0 0.5px 1px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.05);
+    }
+    .dark .mac-btn:hover { background: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 100%), var(--btn-bg-hover); }
+    .dark .mac-btn-primary {
+      background: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 100%), var(--accent);
+      box-shadow: 0 0.5px 1px rgba(0,0,0,0.3);
+    }
+
+    /* macOS native-style select */
+    select.mac-select {
+      appearance: none; -webkit-appearance: none;
+      padding: 3px 24px 3px 8px; border-radius: 5px; font-size: 12px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.17) 0%, rgba(255,255,255,0) 100%), var(--btn-bg);
+      border: 0.5px solid var(--btn-border); color: var(--btn-text);
+      box-shadow: 0 0.5px 1px rgba(0,0,0,0.1);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='6'%3E%3Cpath d='M0 0l4 6 4-6z' fill='%23666'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 8px center;
+    }
+    .dark select.mac-select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='6'%3E%3Cpath d='M0 0l4 6 4-6z' fill='%23999'/%3E%3C/svg%3E");
+    }
+
+    /* macOS native-style checkbox */
+    input[type="checkbox"].mac-check {
+      appearance: none; -webkit-appearance: none;
+      width: 14px; height: 14px; border-radius: 3px;
+      border: 1px solid var(--border-strong);
+      background: var(--bg-surface); cursor: default; vertical-align: middle;
+    }
+    /* macOS native-style search input */
+    input.mac-input {
+      appearance: none; -webkit-appearance: none;
+      padding: 3px 8px; border-radius: 5px; font-size: 12px;
+      background: var(--input-bg);
+      border: 0.5px solid var(--input-border); color: var(--input-text);
+      box-shadow: inset 0 0.5px 1px rgba(0,0,0,0.06);
+    }
+    input.mac-input:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 2.5px rgba(0,122,255,0.25), inset 0 0.5px 1px rgba(0,0,0,0.06);
+    }
+    .dark input.mac-input:focus {
+      box-shadow: 0 0 0 2.5px rgba(10,132,255,0.3), inset 0 0.5px 1px rgba(0,0,0,0.1);
+    }
+
+    /* macOS native-style toggle switch */
+    .mac-toggle { display: inline-block; position: relative; }
+    .mac-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+    .mac-toggle-track {
+      display: block; width: 26px; height: 15px; border-radius: 8px;
+      background: var(--border-strong); transition: background 0.2s; cursor: default;
+    }
+    .mac-toggle-thumb {
+      display: block; width: 11px; height: 11px; border-radius: 6px;
+      background: #fff; margin: 2px;
+      box-shadow: 0 0.5px 1px rgba(0,0,0,0.2);
+      transition: transform 0.2s;
+    }
+    .mac-toggle input:checked + .mac-toggle-track { background: var(--accent); }
+    .mac-toggle input:checked + .mac-toggle-track .mac-toggle-thumb { transform: translateX(11px); }
+
+    input[type="checkbox"].mac-check:checked {
+      background: var(--accent); border-color: var(--accent);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='8'%3E%3Cpath d='M1 4l3 3 5-6' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: center;
+    }
+
+    /* macOS sidebar vibrancy */
+    .macos-sidebar {
+      background: rgba(246,246,246,0.85);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+    }
+    .dark .macos-sidebar {
+      background: rgba(30,30,30,0.75);
+    }
+
+    /* --- Light theme (macOS native) --- */
     :root {
-      --bg: #fafafa; --bg-surface: #ffffff; --bg-chat: #f5f5f5;
-      --border: #eee; --border-strong: #ddd;
-      --text: #333; --text-secondary: #666; --text-muted: #999; --text-faint: #bbb; --text-ghost: #ccc; --text-dot: #ddd;
-      --input-bg: #f5f5f5; --input-border: #e5e5e5; --input-text: #333; --input-placeholder: #bbb;
-      --btn-bg: #f0f0f0; --btn-bg-hover: #e8e8e8; --btn-border: #ddd; --btn-text: #555;
-      --btn2-bg: #f5f5f5; --btn2-bg-hover: #eee; --btn2-border: #e5e5e5; --btn2-text: #888;
-      --item-hover: #f8f8f8; --item-active: #f0f0f0; --item-active-border: #ddd;
-      --bubble-user-bg: #333; --bubble-user-text: #f5f5f5; --bubble-user-border: transparent;
-      --bubble-ai-bg: #fff; --bubble-ai-text: #333; --bubble-ai-border: #e5e5e5;
+      --bg: #ececec; --bg-surface: #ffffff; --bg-chat: #f5f5f5;
+      --bg-sidebar: rgba(246,246,246,0.85);
+      --border: #d5d5d5; --border-strong: #c0c0c0;
+      --text: #1d1d1f; --text-secondary: #3d3d3f; --text-muted: #86868b; --text-faint: #aeaeb2; --text-ghost: #c7c7cc; --text-dot: #d1d1d6;
+      --input-bg: rgba(0,0,0,0.04); --input-border: rgba(0,0,0,0.1); --input-text: #1d1d1f; --input-placeholder: #aeaeb2;
+      --btn-bg: rgba(0,0,0,0.05); --btn-bg-hover: rgba(0,0,0,0.08); --btn-border: rgba(0,0,0,0.1); --btn-text: #3d3d3f;
+      --btn2-bg: rgba(0,0,0,0.03); --btn2-bg-hover: rgba(0,0,0,0.06); --btn2-border: rgba(0,0,0,0.08); --btn2-text: #86868b;
+      --item-hover: rgba(0,0,0,0.04); --item-active: rgba(0,122,255,0.12); --item-active-border: rgba(0,122,255,0.2);
+      --accent: #007aff;
+      --bubble-user-bg: #007aff; --bubble-user-text: #fff; --bubble-user-border: transparent;
+      --bubble-ai-bg: #e9e9eb; --bubble-ai-text: #1d1d1f; --bubble-ai-border: transparent;
       --code-bg: #f5f5f5; --code-border: #e5e5e5; --code-bg-user: #2a2a2a; --code-border-user: #444;
       --inline-code-bg: rgba(0,0,0,0.06); --inline-code-bg-user: rgba(255,255,255,0.12);
       --blockquote-border: #ccc; --blockquote-color: #888;
@@ -71,31 +175,33 @@
     }
     /* --- Dark theme --- */
     .dark {
-      --bg: #0e0e0e; --bg-surface: #161616; --bg-chat: #111;
-      --border: #222; --border-strong: #3a3a3a;
-      --text: #ddd; --text-secondary: #aaa; --text-muted: #777; --text-faint: #666; --text-ghost: #555; --text-dot: #444;
-      --input-bg: #1a1a1a; --input-border: #333; --input-text: #ccc; --input-placeholder: #666;
-      --btn-bg: #222; --btn-bg-hover: #2a2a2a; --btn-border: #3a3a3a; --btn-text: #bbb;
-      --btn2-bg: #1a1a1a; --btn2-bg-hover: #222; --btn2-border: #333; --btn2-text: #999;
-      --item-hover: #1a1a1a; --item-active: #222; --item-active-border: #3a3a3a;
-      --bubble-user-bg: #2a2a2a; --bubble-user-text: #eee; --bubble-user-border: #3a3a3a;
-      --bubble-ai-bg: #1a1a1a; --bubble-ai-text: #ccc; --bubble-ai-border: #333;
-      --code-bg: #141414; --code-border: #333; --code-bg-user: #333; --code-border-user: #444;
+      --bg: #1e1e1e; --bg-surface: #2a2a2a; --bg-chat: #232323;
+      --bg-sidebar: rgba(30,30,30,0.75);
+      --border: #3a3a3a; --border-strong: #4a4a4a;
+      --text: #e5e5e7; --text-secondary: #c7c7cc; --text-muted: #8e8e93; --text-faint: #636366; --text-ghost: #48484a; --text-dot: #3a3a3c;
+      --input-bg: rgba(255,255,255,0.06); --input-border: rgba(255,255,255,0.1); --input-text: #e5e5e7; --input-placeholder: #636366;
+      --btn-bg: rgba(255,255,255,0.08); --btn-bg-hover: rgba(255,255,255,0.12); --btn-border: rgba(255,255,255,0.1); --btn-text: #c7c7cc;
+      --btn2-bg: rgba(255,255,255,0.05); --btn2-bg-hover: rgba(255,255,255,0.08); --btn2-border: rgba(255,255,255,0.08); --btn2-text: #8e8e93;
+      --item-hover: rgba(255,255,255,0.05); --item-active: rgba(0,122,255,0.2); --item-active-border: rgba(0,122,255,0.3);
+      --accent: #0a84ff;
+      --bubble-user-bg: #0a84ff; --bubble-user-text: #fff; --bubble-user-border: transparent;
+      --bubble-ai-bg: #3a3a3c; --bubble-ai-text: #e5e5e7; --bubble-ai-border: transparent;
+      --code-bg: #1c1c1e; --code-border: #3a3a3c; --code-bg-user: #2c2c2e; --code-border-user: #48484a;
       --inline-code-bg: rgba(255,255,255,0.08); --inline-code-bg-user: rgba(255,255,255,0.14);
-      --blockquote-border: #555; --blockquote-color: #999;
-      --table-border: #3a3a3a; --table-th-bg: #222;
-      --link-color: #8ab4f8; --link-color-user: #a5c8ff;
-      --tool-text: #666; --scrollbar: #444;
-      --toast-bg: #222; --toast-border: #3a3a3a; --toast-text: #ccc;
+      --blockquote-border: #48484a; --blockquote-color: #8e8e93;
+      --table-border: #3a3a3c; --table-th-bg: #2c2c2e;
+      --link-color: #64d2ff; --link-color-user: #a5c8ff;
+      --tool-text: #636366; --scrollbar: #48484a;
+      --toast-bg: #2c2c2e; --toast-border: #3a3a3c; --toast-text: #c7c7cc;
       --hit-bg: #78350f; --hit-active-bg: #f59e0b; --hit-active-text: #fff;
-      --updated-dot: #60a5fa; --updated-bg: rgba(96,165,250,0.06);
-      --modal-overlay: rgba(0,0,0,0.6); --modal-bg: #1e1e1e; --modal-border: #3a3a3a;
+      --updated-dot: #0a84ff; --updated-bg: rgba(10,132,255,0.08);
+      --modal-overlay: rgba(0,0,0,0.5); --modal-bg: #2c2c2e; --modal-border: #3a3a3c;
     }
     body { background: var(--bg); color: var(--text); }
     .scrollbar-thin::-webkit-scrollbar-thumb { background: var(--scrollbar); }
 
-    .bubble-user { background: var(--bubble-user-bg); color: var(--bubble-user-text); border: 1px solid var(--bubble-user-border); border-radius: 16px 16px 4px 16px; max-width: 75%; }
-    .bubble-assistant { background: var(--bubble-ai-bg); color: var(--bubble-ai-text); border: 1px solid var(--bubble-ai-border); border-radius: 16px 16px 16px 4px; max-width: 75%; }
+    .bubble-user { background: var(--bubble-user-bg); color: var(--bubble-user-text); border: none; border-radius: 18px 18px 4px 18px; max-width: 75%; }
+    .bubble-assistant { background: var(--bubble-ai-bg); color: var(--bubble-ai-text); border: none; border-radius: 18px 18px 18px 4px; max-width: 75%; }
 
     .md-content p { margin: 0.3em 0; }
     .md-content p:first-child { margin-top: 0; }
@@ -220,32 +326,43 @@
     .dark .settings-popover { box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
   </style>
 </head>
-<body class="h-screen flex flex-col">
+<body class="h-screen flex flex-row" style="background:var(--bg);">
 
-  <!-- Header -->
-  <header class="flex-shrink-0 border-b z-50" style="background:var(--bg-surface);border-color:var(--border);">
-    <div class="w-full px-5 py-3 flex items-center justify-between">
-      <h1 class="text-sm font-medium tracking-wide" style="color:var(--text-muted);">CLAUDE SESSIONS</h1>
-      <div class="flex items-center gap-3">
+  <!-- Sidebar (extends into titlebar) -->
+  <aside id="sidebar" class="macos-sidebar flex flex-col flex-shrink-0 transition-all duration-200" style="width:260px;border-right:1px solid var(--border);">
+    <!-- Titlebar drag area in sidebar -->
+    <div data-tauri-drag-region class="titlebar-drag flex-shrink-0 flex items-end px-3 pb-2" style="padding-top:38px;">
+      <button id="allProjectsBtn"
+        class="w-full text-left px-3 py-1.5 rounded-md text-sm font-medium transition" data-i18n="allProjects">
+      </button>
+    </div>
+    <div class="flex-1 overflow-y-auto scrollbar-thin px-3 pb-3">
+      <div id="projectList" class="space-y-0.5"></div>
+    </div>
+  </aside>
+
+  <!-- Main area -->
+  <div class="flex-1 flex flex-col min-w-0">
+
+    <!-- Toolbar (titlebar drag region) -->
+    <header data-tauri-drag-region class="titlebar-drag flex-shrink-0 flex items-center justify-between z-50" style="padding:0 16px;height:52px;background:var(--bg-surface);border-bottom:1px solid var(--border);">
+      <div class="flex items-center gap-2" style="padding-left:4px;">
+        <button id="archiveSelectedBtn"
+          class="invisible mac-btn text-xs"
+          style="font-size:11px;">
+          <span data-i18n="archiveSelected"></span>
+        </button>
+      </div>
+      <div class="flex items-center gap-2">
+        <input id="search" type="text"
+          class="mac-input px-3 w-56" style="height:24px;">
         <div class="relative">
-          <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs" style="color:var(--text-faint);">&#x1F50D;</span>
-          <input id="search" type="text"
-            class="rounded pl-8 pr-3 py-1.5 text-sm w-64 focus:outline-none transition"
-            style="background:var(--input-bg);border:1px solid var(--input-border);color:var(--input-text);">
-        </div>
-        <label class="flex items-center gap-1.5 text-xs cursor-pointer select-none" style="color:var(--text-muted);">
-          <input type="checkbox" id="showArchived" class="rounded" style="border-color:var(--border-strong);">
-          <span data-i18n="showArchived"></span>
-        </label>
-        <!-- Settings gear -->
-        <div class="relative">
-          <button id="settingsBtn" class="text-xl w-8 h-8 flex items-center justify-center rounded hover:opacity-70 transition" style="color:var(--text-secondary);" title="Settings">&#x2699;</button>
-          <!-- Popover -->
+          <button id="settingsBtn" class="text-base w-7 h-7 flex items-center justify-center rounded-md hover:opacity-70 transition" style="color:var(--text-muted);" title="Settings">&#x2699;</button>
           <div id="settingsPopover" class="settings-popover hidden">
             <div class="mb-3">
               <label class="text-xs font-medium block mb-1" style="color:var(--text-secondary);" data-i18n="theme"></label>
-              <select id="themeSelect" class="w-full rounded px-2.5 py-1.5 text-sm focus:outline-none"
-                style="background:var(--input-bg);border:1px solid var(--input-border);color:var(--input-text);">
+              <select id="themeSelect" class="mac-select w-full focus:outline-none"
+                style="color:var(--btn-text);">
                 <option value="system" data-i18n-option="themeSystem"></option>
                 <option value="light" data-i18n-option="themeLight"></option>
                 <option value="dark" data-i18n-option="themeDark"></option>
@@ -253,8 +370,8 @@
             </div>
             <div class="mb-3">
               <label class="text-xs font-medium block mb-1" style="color:var(--text-secondary);" data-i18n="terminalApp"></label>
-              <select id="terminalAppSelect" class="w-full rounded px-2.5 py-1.5 text-sm focus:outline-none"
-                style="background:var(--input-bg);border:1px solid var(--input-border);color:var(--input-text);">
+              <select id="terminalAppSelect" class="mac-select w-full focus:outline-none"
+                style="color:var(--btn-text);">
                 <option value="Terminal">Terminal.app</option>
                 <option value="iTerm">iTerm2</option>
                 <option value="Warp">Warp</option>
@@ -262,46 +379,38 @@
                 <option value="Ghostty">Ghostty</option>
               </select>
             </div>
-            <div>
+            <div class="mb-3">
               <label class="text-xs font-medium block mb-1" style="color:var(--text-secondary);" data-i18n="language"></label>
-              <select id="langSelect" class="w-full rounded px-2.5 py-1.5 text-sm focus:outline-none"
-                style="background:var(--input-bg);border:1px solid var(--input-border);color:var(--input-text);">
+              <select id="langSelect" class="mac-select w-full focus:outline-none"
+                style="color:var(--btn-text);">
                 <option value="ja">日本語</option>
                 <option value="en">English</option>
               </select>
             </div>
+            <div>
+              <label class="flex items-center justify-between gap-2 text-xs cursor-default" style="color:var(--text-secondary);">
+                <span data-i18n="showArchived"></span>
+                <div class="mac-toggle">
+                  <input type="checkbox" id="showArchived">
+                  <span class="mac-toggle-track"><span class="mac-toggle-thumb"></span></span>
+                </div>
+              </label>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </header>
+    </header>
+    <!-- Hidden title for sessionListTitle updates -->
+    <h2 id="sessionListTitle" class="hidden"></h2>
 
   <div class="flex flex-1 min-h-0 relative">
-
-    <!-- Sidebar: Projects -->
-    <aside id="sidebar" class="w-64 overflow-y-auto scrollbar-thin flex-shrink-0 transition-all duration-200" style="border-right:1px solid var(--border);background:var(--bg-surface);">
-      <div class="p-3">
-        <button id="allProjectsBtn"
-          class="w-full text-left px-3 py-2 rounded text-sm font-medium transition mb-1" data-i18n="allProjects">
-        </button>
-        <div id="projectList" class="space-y-0.5"></div>
-      </div>
-    </aside>
 
     <!-- Sidebar toggle (visible when sidebar is hidden) -->
     <div id="sidebarToggle" class="sidebar-toggle hidden">&#x25B6;</div>
 
     <!-- Session List -->
     <div id="sessionListPane" class="flex-1 min-w-0 overflow-y-auto scrollbar-thin" style="background:var(--bg-surface);">
-      <div class="p-4">
-        <div class="flex items-center justify-between mb-3 h-7">
-          <h2 id="sessionListTitle" class="text-xs font-medium" style="color:var(--text-muted);"></h2>
-          <button id="archiveSelectedBtn"
-            class="invisible text-xs px-3 py-1 rounded transition"
-            style="color:var(--btn2-text);background:var(--btn-bg);">
-            <span data-i18n="archiveSelected"></span>
-          </button>
-        </div>
+      <div class="p-3">
         <div id="sessionList" class="space-y-0.5"></div>
       </div>
     </div>
@@ -316,6 +425,7 @@
       <!-- Footer with action buttons -->
       <div id="detailFooter" class="flex-shrink-0 px-4 py-2 flex items-center justify-end gap-2" style="border-top:1px solid var(--border);background:var(--bg-surface);"></div>
     </div>
+  </div>
   </div>
 
   <!-- Toast -->
@@ -540,14 +650,14 @@ function renderProjects() {
     const [prefix, tail] = shortPathElements(p.path);
     const hasCustomName = !!projectNameMap[p.path];
 
-    const nameSpan = createEl('span', { className: 'truncate' });
+    const nameSpan = createEl('span', { className: 'flex items-baseline min-w-0 overflow-hidden' });
     if (hasCustomName) {
-      const n = createEl('span', { className: 'font-medium', textContent: displayName });
+      const n = createEl('span', { className: 'font-medium truncate', textContent: displayName });
       n.style.color = 'var(--text-secondary)';
       nameSpan.appendChild(n);
     } else {
-      if (prefix) { const s = createEl('span', { textContent: prefix }); s.style.color = 'var(--text-faint)'; nameSpan.appendChild(s); }
-      const t = createEl('span', { className: 'font-medium', textContent: tail }); t.style.color = 'var(--text-secondary)'; nameSpan.appendChild(t);
+      if (prefix) { const s = createEl('span', { className: 'truncate flex-shrink', textContent: prefix }); s.style.cssText = 'color:var(--text-faint);min-width:0;'; nameSpan.appendChild(s); }
+      const t = createEl('span', { className: 'font-medium flex-shrink-0', textContent: tail }); t.style.color = 'var(--text-secondary)'; nameSpan.appendChild(t);
     }
 
     const countSpan = createEl('span', { className: 'text-[10px] flex-shrink-0 ml-2', textContent: String(p.sessionCount) });
@@ -572,8 +682,11 @@ function highlightProject() {
     if (active) active.style.background = 'var(--btn-bg)';
   }
   const allBtn = document.getElementById('allProjectsBtn');
-  allBtn.style.background = selectedProject ? 'transparent' : 'var(--btn-bg)';
+  allBtn.style.background = selectedProject ? 'transparent' : 'var(--item-active)';
   allBtn.style.color = selectedProject ? 'var(--text-secondary)' : 'var(--text)';
+  // Show session count next to "All Projects"
+  const countText = sessions.length ? ' (' + sessions.length + ')' : '';
+  allBtn.textContent = t('allProjects') + countText;
 }
 
 const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
@@ -600,7 +713,7 @@ function saveToggled() {
 function renderSessionItem(s) {
   const cb = createEl('input', {
     type: 'checkbox',
-    className: 'session-check mt-1 rounded flex-shrink-0',
+    className: 'session-check mac-check mt-1 flex-shrink-0',
     'data-id': s.sessionId,
     onChange: (e) => {
       if (e.target.checked) selectedIds.add(s.sessionId);
@@ -610,7 +723,6 @@ function renderSessionItem(s) {
       ab.classList.toggle('visible', selectedIds.size > 0);
     }
   });
-  cb.style.borderColor = 'var(--border-strong)';
   if (selectedIds.has(s.sessionId)) cb.checked = true;
 
   const firstMsg = createEl('p', { className: 'text-sm leading-snug truncate', textContent: s.firstDisplay });
@@ -659,9 +771,11 @@ function renderSessionItem(s) {
   item.addEventListener('mouseenter', () => {
     if (!isActive) item.style.background = 'var(--item-hover)';
     clearTimeout(previewTimer);
-    previewTimer = setTimeout(() => {
-      showPreview(s.sessionId, item.getBoundingClientRect());
-    }, 400);
+    if (!isActive) {
+      previewTimer = setTimeout(() => {
+        showPreview(s.sessionId, item.getBoundingClientRect());
+      }, 100);
+    }
   });
   item.addEventListener('mouseleave', () => {
     if (!isActive) item.style.background = defaultBg;
@@ -825,20 +939,20 @@ async function showDetail(sessionId) {
   });
   idLine.style.color = 'var(--text-faint)';
 
-  const mkBtn = (text, style, onClick) => {
-    const btn = createEl('button', { className: 'text-xs px-3 py-1.5 rounded transition flex-shrink-0', textContent: text, onClick });
-    btn.style.cssText = style;
+  const mkBtn = (text, isPrimary, onClick) => {
+    const btn = createEl('button', {
+      className: 'mac-btn flex-shrink-0' + (isPrimary ? ' mac-btn-primary' : ''),
+      textContent: text, onClick
+    });
     return btn;
   };
 
   // Chat search controls
-  const searchIcon = createEl('span', { className: 'text-[10px]', textContent: '\uD83D\uDD0D' });
-  searchIcon.style.color = 'var(--text-faint)';
   const chatSearchInput = createEl('input', {
     type: 'text', id: 'chatSearch',
-    className: 'rounded pl-2 pr-2 py-0.5 text-xs focus:outline-none transition',
+    className: 'mac-input px-2',
   });
-  chatSearchInput.style.cssText = 'background:var(--input-bg);border:1px solid var(--input-border);color:var(--input-text);width:140px;';
+  chatSearchInput.style.cssText = 'width:140px;height:24px;';
   chatSearchInput.placeholder = t('chatSearchPlaceholder');
   const chatCount = createEl('span', { id: 'chatSearchCount', className: 'text-[10px] flex-shrink-0 w-12 text-center' });
   chatCount.style.color = 'var(--text-muted)';
@@ -851,7 +965,7 @@ async function showDetail(sessionId) {
   const headerRow = createEl('div', { className: 'flex items-center gap-2 min-w-0' }, [
     pathLine, idLine,
     createEl('span', { className: 'flex-1' }),
-    searchIcon, chatSearchInput, chatCount, prevBtn, nextBtn,
+    chatSearchInput, chatCount, prevBtn, nextBtn,
   ]);
 
   headerEl.replaceChildren(headerRow);
@@ -868,16 +982,13 @@ async function showDetail(sessionId) {
   // Footer buttons
   const footerEl = document.getElementById('detailFooter');
   const sessionUpdated = isUpdatedSession(sessions.find(s => s.sessionId === sessionId) || {});
-  const resumeStyle = sessionUpdated
-    ? 'color:#fff;background:var(--updated-dot);border:1px solid var(--updated-dot);font-weight:600;'
-    : 'color:var(--btn-text);background:var(--btn-bg);border:1px solid var(--btn-border);';
   const resumeOpenBtn = mkBtn(
     '▶ ' + (isRemote() ? t('resumeCopy') : t('resumeTerminal')),
-    resumeStyle,
+    sessionUpdated || true,
     () => isRemote() ? copyResume(sessionId) : resumeInTerminal(sessionId),
   );
-  const resumeCopyBtn = mkBtn('📋 ' + t('copyCmd'), 'color:var(--btn2-text);background:var(--btn2-bg);border:1px solid var(--btn2-border);', () => copyResume(sessionId));
-  const archiveBtn = mkBtn('📥 ' + t('archive'), 'color:var(--text-muted);background:var(--btn2-bg);border:1px solid var(--btn2-border);', () => archiveSingle(sessionId));
+  const resumeCopyBtn = mkBtn('📋 ' + t('copyCmd'), false, () => copyResume(sessionId));
+  const archiveBtn = mkBtn('📥 ' + t('archive'), false, () => archiveSingle(sessionId));
   footerEl.replaceChildren(resumeOpenBtn, resumeCopyBtn, archiveBtn);
 
   // Chat messages
@@ -942,13 +1053,14 @@ function initPreview() {
 
 function showPreview(sessionId, anchorRect) {
   if (previewSessionId === sessionId && !previewEl.classList.contains('hidden')) return;
+  if (!anchorRect || (anchorRect.right === 0 && anchorRect.top === 0)) return;
   previewSessionId = sessionId;
 
-  // Position
+  // Position: to the right of anchor, clamped to viewport
   const x = anchorRect.right + 8;
   const y = anchorRect.top;
-  previewEl.style.left = Math.min(x, window.innerWidth - 380) + 'px';
-  previewEl.style.top = Math.min(y, window.innerHeight - 320) + 'px';
+  previewEl.style.left = Math.max(10, Math.min(x, window.innerWidth - 380)) + 'px';
+  previewEl.style.top = Math.max(10, Math.min(y, window.innerHeight - 320)) + 'px';
 
   if (previewCache[sessionId]) {
     renderPreview(previewCache[sessionId]);

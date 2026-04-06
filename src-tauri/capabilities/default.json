@@ -3,6 +3,7 @@
   "description": "Default capabilities",
   "windows": ["*"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "core:window:allow-start-dragging"
   ]
 }
