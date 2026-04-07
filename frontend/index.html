@@ -1808,7 +1808,13 @@ Promise.all([fetchSessions(), fetchProjects(), fetchSettings()]).then(() => {
 // Auto-refresh every 30s to detect updated sessions
 setInterval(async () => {
   const oldSessions = sessions.slice();
-  await fetchSessions(document.getElementById('showArchived').checked);
+  // Fetch new data but don't re-render if in fulltext search mode
+  sessions = await invoke('list_sessions', { includeArchived: document.getElementById('showArchived').checked }) || [];
+  if (isFirstLoad) {
+    sessions.forEach(s => { knownTimestamps[s.sessionId] = s.lastTimestamp; });
+    isFirstLoad = false;
+  }
+  if (searchMode !== 'fulltext') renderSessions();
   // Incremental search index update for changed sessions
   const updatedIds = sessions
     .filter(s => {
