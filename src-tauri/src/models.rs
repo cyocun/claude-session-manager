@@ -415,6 +415,8 @@ pub struct TokenTimePoint {
     pub label: String,
     pub input_tokens: u64,
     pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
     pub total_tokens: u64,
     pub estimated_cost_usd: f64,
 }
@@ -443,6 +445,36 @@ pub struct TokenDashboard {
     pub by_week: Vec<TokenTimePoint>,
     pub by_month: Vec<TokenTimePoint>,
     pub by_session: Vec<TokenSessionRow>,
+    pub tool_usage: Vec<ToolUsageEntry>,
+    pub by_model: Vec<ModelBreakdown>,
+    pub word_freq: Vec<WordFreqEntry>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolUsageEntry {
+    pub name: String,
+    pub count: u64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelBreakdown {
+    pub model: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub total_tokens: u64,
+    pub estimated_cost_usd: f64,
+    pub message_count: u64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WordFreqEntry {
+    pub word: String,
+    pub count: u64,
 }
 
 #[derive(Debug, Serialize, Clone)]
