@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Claude Sessions</title>
   <script>
   window.onerror = function(msg, src, line, col, err) {
@@ -154,7 +157,7 @@
       --bg: #ececec; --bg-surface: #ffffff; --bg-chat: #f5f5f5;
       --bg-sidebar: rgba(246,246,246,0.85);
       --border: #d5d5d5; --border-strong: #c0c0c0;
-      --text: #1d1d1f; --text-secondary: #3d3d3f; --text-muted: #86868b; --text-faint: #aeaeb2; --text-ghost: #c7c7cc; --text-dot: #d1d1d6;
+      --text: #1a1a1c; --text-secondary: #333336; --text-muted: #6e6e73; --text-faint: #98989d; --text-ghost: #b0b0b5; --text-dot: #c7c7cc;
       --input-bg: rgba(0,0,0,0.04); --input-border: rgba(0,0,0,0.1); --input-text: #1d1d1f; --input-placeholder: #aeaeb2;
       --btn-bg: rgba(0,0,0,0.05); --btn-bg-hover: rgba(0,0,0,0.08); --btn-border: rgba(0,0,0,0.1); --btn-text: #3d3d3f;
       --btn2-bg: rgba(0,0,0,0.03); --btn2-bg-hover: rgba(0,0,0,0.06); --btn2-border: rgba(0,0,0,0.08); --btn2-text: #86868b;
@@ -178,7 +181,7 @@
       --bg: #1e1e1e; --bg-surface: #2a2a2a; --bg-chat: #232323;
       --bg-sidebar: rgba(30,30,30,0.75);
       --border: #3a3a3a; --border-strong: #4a4a4a;
-      --text: #e5e5e7; --text-secondary: #c7c7cc; --text-muted: #8e8e93; --text-faint: #636366; --text-ghost: #48484a; --text-dot: #3a3a3c;
+      --text: #f0f0f2; --text-secondary: #d1d1d6; --text-muted: #98989d; --text-faint: #6e6e73; --text-ghost: #545458; --text-dot: #48484a;
       --input-bg: rgba(255,255,255,0.06); --input-border: rgba(255,255,255,0.1); --input-text: #e5e5e7; --input-placeholder: #636366;
       --btn-bg: rgba(255,255,255,0.08); --btn-bg-hover: rgba(255,255,255,0.12); --btn-border: rgba(255,255,255,0.1); --btn-text: #c7c7cc;
       --btn2-bg: rgba(255,255,255,0.05); --btn2-bg-hover: rgba(255,255,255,0.08); --btn2-border: rgba(255,255,255,0.08); --btn2-text: #8e8e93;
@@ -226,7 +229,7 @@
     mark.chat-hit { background: var(--hit-bg); color: var(--text); border-radius: 2px; padding: 0 1px; }
     mark.chat-hit-active { background: var(--hit-active-bg); color: var(--hit-active-text); }
 
-    .tool-block { background: var(--code-bg); border: 1px solid var(--code-border); border-radius: 6px; margin: 4px 0; font-size: 0.75rem; overflow: hidden; }
+    .tool-block { background: var(--code-bg); border: 1px solid var(--code-border); border-radius: 6px; margin: 4px 0; font-size: 0.8rem; overflow: hidden; }
     /* diff2html overrides */
     .tool-body .d2h-wrapper { font-size: 11px; }
     .tool-body .d2h-file-header, .tool-body .d2h-file-list { display: none; }
@@ -243,7 +246,7 @@
     .dark .d2h-code-linenumber { background: var(--code-bg); color: var(--text-muted); border-color: var(--code-border); }
     .dark .d2h-file-diff .d2h-diff-table { border-color: var(--code-border); }
     .dark .d2h-emptyplaceholder { background: var(--code-bg); border-color: var(--code-border); }
-    .tool-header { display: flex; align-items: center; gap: 6px; padding: 4px 8px; cursor: pointer; user-select: none; }
+    .tool-header { display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: pointer; user-select: none; min-height: 28px; }
     .tool-header:hover { background: var(--item-hover); }
     .tool-label { font-weight: 600; color: var(--text-secondary); font-family: 'SF Mono', Menlo, monospace; }
     .tool-desc { color: var(--text-muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -276,13 +279,13 @@
 
     .session-preview {
       position: fixed; z-index: 200; pointer-events: none;
-      width: 360px; max-height: 300px; overflow: hidden;
+      width: 400px; height: 90vh; overflow-y: auto;
       background: var(--modal-bg); border: 1px solid var(--modal-border);
-      border-radius: 8px; padding: 10px 12px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+      border-radius: 10px; padding: 12px 14px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.2);
       font-size: 12px; line-height: 1.5;
     }
-    .dark .session-preview { box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+    .dark .session-preview { box-shadow: 0 12px 40px rgba(0,0,0,0.6); }
     .session-preview .preview-msg {
       padding: 4px 8px; margin: 2px 0; border-radius: 8px; max-height: 60px;
       overflow: hidden; text-overflow: ellipsis;
@@ -307,125 +310,53 @@
     }
     .resize-handle:hover, .resize-handle.active { background: var(--text-muted); }
 
-    .sidebar-toggle {
-      position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-      width: 20px; height: 40px; display: flex; align-items: center; justify-content: center;
-      cursor: pointer; z-index: 10; font-size: 10px;
-      background: var(--bg-surface); border: 1px solid var(--border);
-      border-left: none; border-radius: 0 6px 6px 0;
-      color: var(--text-muted);
-    }
-    .sidebar-toggle:hover { color: var(--text); }
-
-    .settings-popover {
-      position: absolute; top: 100%; right: 0; margin-top: 6px; z-index: 100;
+    /* Session tooltip */
+    .session-tooltip {
+      position: fixed; z-index: 200; pointer-events: none;
+      padding: 4px 8px; border-radius: 4px; font-size: 11px;
       background: var(--modal-bg); border: 1px solid var(--modal-border);
-      border-radius: 8px; padding: 1rem 1.2rem; min-width: 280px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15); white-space: nowrap;
+      color: var(--text-secondary);
     }
-    .dark .settings-popover { box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+    .dark .session-tooltip { box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
   </style>
 </head>
 <body class="h-screen flex flex-row" style="background:var(--bg);">
 
-  <!-- Sidebar (extends into titlebar) -->
-  <aside id="sidebar" class="macos-sidebar flex flex-col flex-shrink-0 transition-all duration-200" style="width:260px;border-right:1px solid var(--border);">
-    <!-- Titlebar drag area in sidebar -->
-    <div data-tauri-drag-region class="titlebar-drag flex-shrink-0 flex items-end px-3 pb-2" style="padding-top:38px;">
-      <button id="allProjectsBtn"
-        class="w-full text-left px-3 py-1.5 rounded-md text-sm font-medium transition" data-i18n="allProjects">
-      </button>
-    </div>
-    <div class="flex-1 overflow-y-auto scrollbar-thin px-3 pb-3">
-      <div id="projectList" class="space-y-0.5"></div>
-    </div>
-  </aside>
-
-  <!-- Main area -->
-  <div class="flex-1 flex flex-col min-w-0">
-
-    <!-- Toolbar (titlebar drag region) -->
-    <header data-tauri-drag-region class="titlebar-drag flex-shrink-0 flex items-center justify-between z-50" style="padding:0 16px;height:52px;background:var(--bg-surface);border-bottom:1px solid var(--border);">
-      <div class="flex items-center gap-2" style="padding-left:4px;">
-        <button id="archiveSelectedBtn"
-          class="invisible mac-btn text-xs"
-          style="font-size:11px;">
-          <span data-i18n="archiveSelected"></span>
+  <!-- Left column: session list (iMessage style) -->
+  <div id="sessionListPane" class="macos-sidebar flex flex-col flex-shrink-0" style="width:300px;border-right:1px solid var(--border);">
+    <!-- Titlebar drag + search + new button -->
+    <div data-tauri-drag-region class="titlebar-drag flex-shrink-0 px-3 pb-2" style="padding-top:38px;">
+      <div class="flex items-center gap-2">
+        <input id="search" type="text" class="mac-input px-3 flex-1" style="height:26px;">
+        <button id="newSessionBtn" class="mac-btn flex-shrink-0" style="width:26px;height:26px;padding:0;" title="New Session">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 7.5h4.5m0 0H11m-4.5 0V3m0 4.5V12"/></svg>
         </button>
       </div>
-      <div class="flex items-center gap-2">
-        <input id="search" type="text"
-          class="mac-input px-3 w-56" style="height:24px;">
-        <div class="relative">
-          <button id="settingsBtn" class="text-base w-7 h-7 flex items-center justify-center rounded-md hover:opacity-70 transition" style="color:var(--text-muted);" title="Settings">&#x2699;</button>
-          <div id="settingsPopover" class="settings-popover hidden">
-            <div class="mb-3">
-              <label class="text-xs font-medium block mb-1" style="color:var(--text-secondary);" data-i18n="theme"></label>
-              <select id="themeSelect" class="mac-select w-full focus:outline-none"
-                style="color:var(--btn-text);">
-                <option value="system" data-i18n-option="themeSystem"></option>
-                <option value="light" data-i18n-option="themeLight"></option>
-                <option value="dark" data-i18n-option="themeDark"></option>
-              </select>
-            </div>
-            <div class="mb-3">
-              <label class="text-xs font-medium block mb-1" style="color:var(--text-secondary);" data-i18n="terminalApp"></label>
-              <select id="terminalAppSelect" class="mac-select w-full focus:outline-none"
-                style="color:var(--btn-text);">
-                <option value="Terminal">Terminal.app</option>
-                <option value="iTerm">iTerm2</option>
-                <option value="Warp">Warp</option>
-                <option value="tmux">tmux</option>
-                <option value="Ghostty">Ghostty</option>
-              </select>
-            </div>
-            <div class="mb-3">
-              <label class="text-xs font-medium block mb-1" style="color:var(--text-secondary);" data-i18n="language"></label>
-              <select id="langSelect" class="mac-select w-full focus:outline-none"
-                style="color:var(--btn-text);">
-                <option value="ja">日本語</option>
-                <option value="en">English</option>
-              </select>
-            </div>
-            <div>
-              <label class="flex items-center justify-between gap-2 text-xs cursor-default" style="color:var(--text-secondary);">
-                <span data-i18n="showArchived"></span>
-                <div class="mac-toggle">
-                  <input type="checkbox" id="showArchived">
-                  <span class="mac-toggle-track"><span class="mac-toggle-thumb"></span></span>
-                </div>
-              </label>
-            </div>
-          </div>
-        </div>
-      </div>
-    </header>
-    <!-- Hidden title for sessionListTitle updates -->
+      <button id="archiveSelectedBtn" class="invisible mac-btn text-xs mt-1.5 w-full" style="font-size:11px;">
+        <span data-i18n="archiveSelected"></span>
+      </button>
+    </div>
+    <!-- Session list -->
+    <div class="flex-1 overflow-y-auto scrollbar-thin px-2 pb-3">
+      <div id="sessionList" class="space-y-0.5"></div>
+    </div>
+    <!-- Hidden elements for state -->
+    <input type="checkbox" id="showArchived" class="hidden">
     <h2 id="sessionListTitle" class="hidden"></h2>
-
-  <div class="flex flex-1 min-h-0 relative">
-
-    <!-- Sidebar toggle (visible when sidebar is hidden) -->
-    <div id="sidebarToggle" class="sidebar-toggle hidden">&#x25B6;</div>
-
-    <!-- Session List -->
-    <div id="sessionListPane" class="flex-1 min-w-0 overflow-y-auto scrollbar-thin" style="background:var(--bg-surface);">
-      <div class="p-3">
-        <div id="sessionList" class="space-y-0.5"></div>
-      </div>
-    </div>
-
-    <!-- Resize handle -->
-    <div id="resizeHandle" class="resize-handle hidden"></div>
-
-    <!-- Detail Pane -->
-    <div id="detailPane" class="hidden flex-col flex-shrink-0">
-      <div id="detailHeader" class="flex-shrink-0 px-4 py-2" style="border-bottom:1px solid var(--border);background:var(--bg-surface);"></div>
-      <div id="detailMessages" class="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-4 py-4" style="background:var(--bg-chat);"></div>
-      <!-- Footer with action buttons -->
-      <div id="detailFooter" class="flex-shrink-0 px-4 py-2 flex items-center justify-end gap-2" style="border-top:1px solid var(--border);background:var(--bg-surface);"></div>
-    </div>
   </div>
+
+  <!-- Resize handle -->
+  <div id="resizeHandle" class="resize-handle"></div>
+
+  <!-- Detail Pane -->
+  <div id="detailPane" class="flex-1 flex flex-col min-w-0">
+    <div id="detailHeader" data-tauri-drag-region class="titlebar-drag flex-shrink-0 px-4 py-2" style="padding-top:38px;border-bottom:1px solid var(--border);background:var(--bg-surface);"></div>
+    <div id="detailMessages" class="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-4 py-4 flex items-center justify-center" style="background:var(--bg-chat);">
+      <p id="emptyState" class="text-sm" style="color:var(--text-faint);" data-i18n="selectSession"></p>
+    </div>
+    <!-- Footer with action buttons -->
+    <div id="detailFooter" class="flex-shrink-0 px-4 py-2 flex items-center justify-end gap-2" style="border-top:1px solid var(--border);background:var(--bg-surface);"></div>
   </div>
 
   <!-- Toast -->
@@ -437,7 +368,7 @@
 // --- i18n ---
 const I18N = {
   ja: {
-    searchPlaceholder: '検索 (セッション・プロジェクト横断)',
+    searchPlaceholder: '検索...',
     chatSearchPlaceholder: '会話内を検索...',
     showArchived: 'アーカイブも表示',
     allProjects: 'すべてのプロジェクト',
@@ -468,9 +399,10 @@ const I18N = {
     hoursAgo: '時間前',
     daysAgo: '日前',
     archiveProject: 'プロジェクトをアーカイブ',
+    selectSession: 'セッションを選択してください',
   },
   en: {
-    searchPlaceholder: 'Search (across sessions & projects)',
+    searchPlaceholder: 'Search...',
     chatSearchPlaceholder: 'Search in conversation...',
     showArchived: 'Show archived',
     allProjects: 'All Projects',
@@ -501,6 +433,7 @@ const I18N = {
     hoursAgo: 'h ago',
     daysAgo: 'd ago',
     archiveProject: 'Archive project',
+    selectSession: 'Select a session',
   }
 };
 
@@ -517,6 +450,7 @@ function applyI18n() {
   document.getElementById('search').placeholder = t('searchPlaceholder');
   const cs = document.getElementById('chatSearch');
   if (cs) cs.placeholder = t('chatSearchPlaceholder');
+  document.getElementById('newSessionBtn').title = lang === 'ja' ? '新規セッション' : 'New Session';
 }
 
 // --- Theme ---
@@ -643,50 +577,9 @@ function timeAgo(ts) {
 // --- Rendering ---
 
 function renderProjects() {
-  const el = document.getElementById('projectList');
-  el.replaceChildren();
-  projects.forEach(p => {
-    const displayName = projectDisplayName(p.path);
-    const [prefix, tail] = shortPathElements(p.path);
-    const hasCustomName = !!projectNameMap[p.path];
-
-    const nameSpan = createEl('span', { className: 'flex items-baseline min-w-0 overflow-hidden' });
-    if (hasCustomName) {
-      const n = createEl('span', { className: 'font-medium truncate', textContent: displayName });
-      n.style.color = 'var(--text-secondary)';
-      nameSpan.appendChild(n);
-    } else {
-      if (prefix) { const s = createEl('span', { className: 'truncate flex-shrink', textContent: prefix }); s.style.cssText = 'color:var(--text-faint);min-width:0;'; nameSpan.appendChild(s); }
-      const t = createEl('span', { className: 'font-medium flex-shrink-0', textContent: tail }); t.style.color = 'var(--text-secondary)'; nameSpan.appendChild(t);
-    }
-
-    const countSpan = createEl('span', { className: 'text-[10px] flex-shrink-0 ml-2', textContent: String(p.sessionCount) });
-    countSpan.style.color = 'var(--text-ghost)';
-
-    const btn = createEl('button', {
-      className: 'project-btn w-full text-left px-3 py-1.5 rounded text-xs transition truncate flex items-center justify-between',
-      'data-path': p.path,
-      onClick: () => { selectedProject = p.path; highlightProject(); renderSessions(); }
-    }, [nameSpan, countSpan]);
-    if (hasCustomName) { btn.title = shortPath(p.path); }
-    el.appendChild(btn);
-  });
-}
-
-function highlightProject() {
-  document.querySelectorAll('.project-btn').forEach(b => {
-    b.style.background = 'transparent';
-  });
-  if (selectedProject) {
-    const active = document.querySelector('.project-btn[data-path="' + CSS.escape(selectedProject) + '"]');
-    if (active) active.style.background = 'var(--btn-bg)';
-  }
-  const allBtn = document.getElementById('allProjectsBtn');
-  allBtn.style.background = selectedProject ? 'transparent' : 'var(--item-active)';
-  allBtn.style.color = selectedProject ? 'var(--text-secondary)' : 'var(--text)';
-  // Show session count next to "All Projects"
-  const countText = sessions.length ? ' (' + sessions.length + ')' : '';
-  allBtn.textContent = t('allProjects') + countText;
+  // Projects are now only used for display name mapping, no sidebar rendering
+  projectNameMap = {};
+  projects.forEach(p => { if (p.name) projectNameMap[p.path] = p.name; });
 }
 
 const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
@@ -758,6 +651,8 @@ function renderSessionItem(s) {
     'data-id': s.sessionId,
     onClick: (e) => {
       if (e.target.tagName === 'INPUT') return;
+      clearTimeout(previewTimer);
+      hidePreview();
       selectedSession = s.sessionId;
       // Mark as seen
       knownTimestamps[s.sessionId] = s.lastTimestamp;
@@ -768,13 +663,17 @@ function renderSessionItem(s) {
   item.style.borderColor = isActive ? 'var(--item-active-border)' : 'transparent';
   item.style.background = isActive ? 'var(--item-active)' : defaultBg;
   if (s.archived) item.style.opacity = '0.4';
+  // Tooltip with date
+  const dateStr = s.lastTimestamp ? new Date(s.lastTimestamp).toLocaleString(lang === 'ja' ? 'ja-JP' : 'en-US') : '';
+  item.title = dateStr;
+
   item.addEventListener('mouseenter', () => {
     if (!isActive) item.style.background = 'var(--item-hover)';
     clearTimeout(previewTimer);
     if (!isActive) {
       previewTimer = setTimeout(() => {
         showPreview(s.sessionId, item.getBoundingClientRect());
-      }, 100);
+      }, 150);
     }
   });
   item.addEventListener('mouseleave', () => {
@@ -832,7 +731,7 @@ function renderSessions() {
     const name = createEl('span', { className: 'text-xs font-medium flex-1 truncate', textContent: projectDisplayName(g.path) });
     name.style.color = 'var(--text-secondary)';
     const count = createEl('span', { className: 'text-[10px] flex-shrink-0', textContent: g.sessions.length + '' });
-    count.style.color = 'var(--text-ghost)';
+    count.style.color = 'var(--text-muted)';
 
     const icon = createEl('span', { className: 'project-group-icon', textContent: '\uD83D\uDCE6' });
     const header = createEl('div', { className: 'project-group-header' }, [icon, chevron, name, count]);
@@ -913,13 +812,9 @@ async function showDetail(sessionId) {
 
   pane.classList.remove('hidden');
   pane.classList.add('flex');
-  if (!pane.style.width) pane.style.width = '50%';
 
-  // Hide sidebar, show resize handle
-  document.getElementById('sidebar').classList.add('hidden');
-  document.getElementById('sidebarToggle').classList.remove('hidden');
-  document.getElementById('resizeHandle').classList.remove('hidden');
-
+  // Remove empty state centering
+  messagesEl.classList.remove('items-center', 'justify-center');
   const loadingSpan = createEl('span', { className: 'text-sm', textContent: t('loading') });
   loadingSpan.style.color = 'var(--text-faint)';
   headerEl.replaceChildren(loadingSpan);
@@ -954,15 +849,15 @@ async function showDetail(sessionId) {
   });
   chatSearchInput.style.cssText = 'width:140px;height:24px;';
   chatSearchInput.placeholder = t('chatSearchPlaceholder');
-  const chatCount = createEl('span', { id: 'chatSearchCount', className: 'text-[10px] flex-shrink-0 w-12 text-center' });
+  const chatCount = createEl('span', { id: 'chatSearchCount', className: 'text-[10px] flex-shrink-0 text-center' });
   chatCount.style.color = 'var(--text-muted)';
-  const prevBtn = createEl('button', { id: 'chatSearchPrev', className: 'text-[10px] px-1 py-0.5 rounded transition', textContent: '\u25B2' });
+  const prevBtn = createEl('button', { id: 'chatSearchPrev', className: 'text-[10px] px-1 py-0.5 rounded transition hidden', textContent: '\u25B2' });
   prevBtn.style.color = 'var(--text-muted)';
-  const nextBtn = createEl('button', { id: 'chatSearchNext', className: 'text-[10px] px-1 py-0.5 rounded transition', textContent: '\u25BC' });
+  const nextBtn = createEl('button', { id: 'chatSearchNext', className: 'text-[10px] px-1 py-0.5 rounded transition hidden', textContent: '\u25BC' });
   nextBtn.style.color = 'var(--text-muted)';
 
   // Single row: path | id | spacer | search
-  const headerRow = createEl('div', { className: 'flex items-center gap-2 min-w-0' }, [
+  const headerRow = createEl('div', { className: 'flex items-center gap-1 min-w-0' }, [
     pathLine, idLine,
     createEl('span', { className: 'flex-1' }),
     chatSearchInput, chatCount, prevBtn, nextBtn,
@@ -1035,6 +930,11 @@ async function showDetail(sessionId) {
   });
 
   messagesEl.appendChild(chatContainer);
+  // Add bottom spacer so last message doesn't touch footer
+  const spacer = createEl('div', {});
+  spacer.style.height = '24px';
+  spacer.style.flexShrink = '0';
+  messagesEl.appendChild(spacer);
   requestAnimationFrame(() => { messagesEl.scrollTop = messagesEl.scrollHeight; });
 }
 
@@ -1056,11 +956,13 @@ function showPreview(sessionId, anchorRect) {
   if (!anchorRect || (anchorRect.right === 0 && anchorRect.top === 0)) return;
   previewSessionId = sessionId;
 
-  // Position: to the right of anchor, clamped to viewport
-  const x = anchorRect.right + 8;
-  const y = anchorRect.top;
-  previewEl.style.left = Math.max(10, Math.min(x, window.innerWidth - 380)) + 'px';
-  previewEl.style.top = Math.max(10, Math.min(y, window.innerHeight - 320)) + 'px';
+  // Position: to the right of session list column, vertically centered
+  const listPane = document.getElementById('sessionListPane');
+  const x = listPane.getBoundingClientRect().right + 8;
+  const previewH = window.innerHeight * 0.9;
+  const y = (window.innerHeight - previewH) / 2;
+  previewEl.style.left = Math.max(10, Math.min(x, window.innerWidth - 420)) + 'px';
+  previewEl.style.top = Math.max(10, y) + 'px';
 
   if (previewCache[sessionId]) {
     renderPreview(previewCache[sessionId]);
@@ -1080,11 +982,11 @@ function renderPreview(detail) {
   previewEl.classList.remove('hidden');
   previewEl.replaceChildren();
 
-  // Show last ~6 meaningful messages
+  // Show last ~20 meaningful messages (preview is 90vh)
   const msgs = detail.messages.filter(m =>
     m.content && m.content !== '[Tool Result]' && !m.content.startsWith('[Tool:')
   );
-  const recent = msgs.slice(-6);
+  const recent = msgs.slice(-20);
 
   recent.forEach(m => {
     const isUser = m.type === 'user';
@@ -1160,8 +1062,8 @@ function renderToolBlocks(tools, externalResultMap) {
     let lang = null;
 
     if (tool.name === 'Bash') {
-      summary = tool.description || tool.command || 'bash';
-      bodyEl = makeHighlightedPre('$ ' + (tool.command || ''), 'bash');
+      summary = tool.description || tool.command || '(bash)';
+      if (tool.command) bodyEl = makeHighlightedPre('$ ' + tool.command, 'bash');
     } else if (tool.name === 'Edit') {
       const fname = (tool.file || '').split('/').pop();
       summary = 'Edit ' + fname;
@@ -1296,7 +1198,9 @@ function doChatSearch() {
     const parent = m.parentNode; parent.replaceChild(document.createTextNode(m.textContent), m); parent.normalize();
   });
   chatHits = []; chatHitIndex = -1;
-  if (!q) { countEl.textContent = ''; return; }
+  const prevEl = document.getElementById('chatSearchPrev');
+  const nextEl = document.getElementById('chatSearchNext');
+  if (!q) { countEl.textContent = ''; prevEl.classList.add('hidden'); nextEl.classList.add('hidden'); return; }
 
   const walker = document.createTreeWalker(messagesEl, NodeFilter.SHOW_TEXT);
   const matches = [];
@@ -1313,6 +1217,9 @@ function doChatSearch() {
   }
   chatHits = Array.from(messagesEl.querySelectorAll('mark.chat-hit'));
   countEl.textContent = chatHits.length ? chatHits.length + t('hits') : '0' + t('hits');
+  // Show nav buttons only when multiple hits
+  if (chatHits.length > 1) { prevEl.classList.remove('hidden'); nextEl.classList.remove('hidden'); }
+  else { prevEl.classList.add('hidden'); nextEl.classList.add('hidden'); }
   if (chatHits.length > 0) { chatHitIndex = 0; activateChatHit(); }
 }
 function activateChatHit() {
@@ -1339,21 +1246,11 @@ function smoothScrollTo(el) {
 function chatSearchNext() { if (!chatHits.length) return; chatHitIndex = (chatHitIndex + 1) % chatHits.length; activateChatHit(); }
 function chatSearchPrev() { if (!chatHits.length) return; chatHitIndex = (chatHitIndex - 1 + chatHits.length) % chatHits.length; activateChatHit(); }
 
-// --- Settings modal ---
-
-function toggleSettings() {
-  document.getElementById('settingsPopover').classList.toggle('hidden');
-}
-function closeSettings() {
-  document.getElementById('settingsPopover').classList.add('hidden');
-}
-
 // --- Resize handle ---
 
 (function() {
   const handle = document.getElementById('resizeHandle');
-  const detail = document.getElementById('detailPane');
-  const container = detail.parentElement;
+  const listPane = document.getElementById('sessionListPane');
   let dragging = false;
 
   handle.addEventListener('mousedown', (e) => {
@@ -1366,14 +1263,9 @@ function closeSettings() {
 
   document.addEventListener('mousemove', (e) => {
     if (!dragging) return;
-    const rect = container.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const totalW = rect.width;
-    const detailW = totalW - x;
-    const minW = 300;
-    const maxW = totalW - 200;
-    const clamped = Math.max(minW, Math.min(maxW, detailW));
-    detail.style.width = clamped + 'px';
+    const newW = e.clientX;
+    const clamped = Math.max(220, Math.min(500, newW));
+    listPane.style.width = clamped + 'px';
   });
 
   document.addEventListener('mouseup', () => {
@@ -1385,48 +1277,45 @@ function closeSettings() {
   });
 })();
 
-// --- Sidebar toggle ---
-
-document.getElementById('sidebarToggle').addEventListener('click', () => {
-  const sidebar = document.getElementById('sidebar');
-  sidebar.classList.remove('hidden');
-  document.getElementById('sidebarToggle').classList.add('hidden');
-});
-
 // --- Init ---
 
-document.getElementById('allProjectsBtn').addEventListener('click', () => { selectedProject = null; highlightProject(); renderSessions(); });
 document.getElementById('search').addEventListener('input', () => renderSessions());
-document.getElementById('showArchived').addEventListener('change', (e) => fetchSessions(e.target.checked));
 document.getElementById('archiveSelectedBtn').addEventListener('click', archiveSelected);
-// chatSearch events are bound dynamically in showDetail()
-document.getElementById('settingsBtn').addEventListener('click', (e) => { e.stopPropagation(); toggleSettings(); });
-document.addEventListener('click', (e) => {
-  const pop = document.getElementById('settingsPopover');
-  if (!pop.classList.contains('hidden') && !pop.contains(e.target) && e.target.id !== 'settingsBtn') closeSettings();
+document.getElementById('newSessionBtn').addEventListener('click', async () => {
+  const result = await invoke('start_new_session');
+  if (result && !result.ok) showToast(t('toastError') + (result.error || ''));
 });
 
-document.getElementById('themeSelect').addEventListener('change', (e) => {
-  themePref = e.target.value; localStorage.setItem('csm-theme', themePref); applyTheme();
-});
-document.getElementById('langSelect').addEventListener('change', (e) => {
-  lang = e.target.value; localStorage.setItem('csm-lang', lang); applyI18n(); renderSessions(); renderProjects();
-});
-document.getElementById('terminalAppSelect').addEventListener('change', async (e) => {
-  await invoke('update_settings', { terminalApp: e.target.value });
-});
-
-// Restore saved state
-document.getElementById('themeSelect').value = themePref;
-document.getElementById('langSelect').value = lang;
+// Listen for menu events from Tauri native menu
+if (_isTauri && window.__TAURI__.event) {
+  const { listen } = window.__TAURI__.event;
+  listen('menu-theme', (e) => {
+    themePref = e.payload; localStorage.setItem('csm-theme', themePref); applyTheme();
+  });
+  listen('menu-terminal', (e) => {
+    invoke('update_settings', { terminalApp: e.payload });
+  });
+  listen('menu-lang', (e) => {
+    lang = e.payload; localStorage.setItem('csm-lang', lang); applyI18n(); renderSessions();
+  });
+  listen('menu-show-archived', (e) => {
+    document.getElementById('showArchived').checked = e.payload;
+    fetchSessions(e.payload);
+  });
+}
 
 applyTheme();
 applyI18n();
-highlightProject();
 initPreview();
 
 Promise.all([fetchSessions(), fetchProjects(), fetchSettings()]).then(() => {
-  document.getElementById('terminalAppSelect').value = serverSettings.terminalApp || 'Terminal';
+  // Sync menu state with saved preferences
+  invoke('sync_menu_state', {
+    theme: themePref,
+    terminal: serverSettings.terminalApp || 'Terminal',
+    lang: lang,
+    showArchived: false,
+  });
 });
 
 // Auto-refresh every 30s to detect updated sessions
