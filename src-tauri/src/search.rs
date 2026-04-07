@@ -1,4 +1,5 @@
 use serde_json::Value;
+use tantivy::schema::document::Value as _;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};

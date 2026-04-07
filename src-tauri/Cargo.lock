@@ -360,7 +360,6 @@ name = "claude-session-manager"
 version = "0.1.0"
 dependencies = [
  "dirs 5.0.1",
- "rayon",
  "serde",
  "serde_json",
  "tantivy",

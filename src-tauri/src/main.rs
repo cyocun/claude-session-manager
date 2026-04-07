@@ -9,7 +9,7 @@ mod tray;
 
 use commands::{archive, projects, resume, search as search_cmd, sessions, settings};
 use std::sync::Arc;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 #[tauri::command]
 fn sync_menu_state(

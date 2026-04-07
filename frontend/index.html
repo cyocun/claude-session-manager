@@ -538,6 +538,8 @@ let searchResults = [];
 let isSearching = false;
 let searchIndexReady = false;
 let fulltextSearchTimer = null;
+let allMessagesRendered = true;
+let renderAbort = null;
 
 function createEl(tag, attrs = {}, children = []) {
   const el = document.createElement(tag);
@@ -875,6 +877,9 @@ async function showDetail(sessionId) {
   document.getElementById('resizeHandle').style.display = '';
   pane.style.display = 'grid';
 
+  // Abort any in-progress chunk rendering from previous session
+  if (renderAbort) renderAbort.aborted = true;
+
   // Switch from grid centering (empty state) to block for scrollable content
   messagesEl.style.display = 'block';
   messagesEl.replaceChildren();
@@ -1015,32 +1020,18 @@ async function showDetail(sessionId) {
     return els;
   }
 
-  // Create placeholders and lazily render with IntersectionObserver
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (!entry.isIntersecting) return;
-      const placeholder = entry.target;
-      const idx = parseInt(placeholder.dataset.idx);
-      observer.unobserve(placeholder);
-      const els = renderMsgDesc(msgDescs[idx]);
-      placeholder.replaceWith(...els);
-    });
-  }, { root: messagesEl, rootMargin: '200px' });
+  // Render last 100 immediately, rest in background then insert in one batch
+  const immediateCount = Math.min(100, msgDescs.length);
+  const deferredCount = msgDescs.length - immediateCount;
 
-  // Render last ~10 messages immediately (visible on scroll-to-bottom), rest as placeholders
-  const immediateCount = Math.min(10, msgDescs.length);
-  const lazyCount = msgDescs.length - immediateCount;
+  // Placeholder for deferred block (single element to replace later)
+  const deferredPlaceholder = deferredCount > 0 ? createEl('div') : null;
+  if (deferredPlaceholder) chatContainer.appendChild(deferredPlaceholder);
 
-  for (let i = 0; i < lazyCount; i++) {
-    const ph = createEl('div', { 'data-idx': String(i) });
-    ph.style.minHeight = '32px';
-    chatContainer.appendChild(ph);
-    observer.observe(ph);
-  }
-
-  for (let i = lazyCount; i < msgDescs.length; i++) {
+  // Immediate messages (bottom N)
+  for (let i = deferredCount; i < msgDescs.length; i++) {
     const els = renderMsgDesc(msgDescs[i]);
-    els.forEach(el => chatContainer.appendChild(el));
+    els.forEach(el => { el.setAttribute('data-msg-idx', i); chatContainer.appendChild(el); });
   }
 
   messagesEl.appendChild(chatContainer);
@@ -1048,6 +1039,61 @@ async function showDetail(sessionId) {
   spacer.style.height = '24px';
   messagesEl.appendChild(spacer);
   requestAnimationFrame(() => { messagesEl.scrollTop = messagesEl.scrollHeight; });
+
+  // Background rendering into DocumentFragment, then one-shot insert
+  const ctrl = { aborted: false };
+  renderAbort = ctrl;
+  allMessagesRendered = (deferredCount === 0);
+
+  function flushDeferred() {
+    if (allMessagesRendered) return;
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < deferredCount; i++) {
+      const els = renderMsgDesc(msgDescs[i]);
+      els.forEach(el => { el.setAttribute('data-msg-idx', i); frag.appendChild(el); });
+    }
+    const prevScrollTop = messagesEl.scrollTop;
+    const prevScrollHeight = messagesEl.scrollHeight;
+    deferredPlaceholder.replaceWith(frag);
+    messagesEl.scrollTop = prevScrollTop + (messagesEl.scrollHeight - prevScrollHeight);
+    allMessagesRendered = true;
+  }
+
+  // Expose flush for search/scroll
+  window._flushRender = flushDeferred;
+
+  if (deferredCount > 0) {
+    // Render offscreen in idle chunks, then batch-insert
+    let chunkIdx = 0;
+    const deferredFrag = document.createDocumentFragment();
+
+    function buildChunk(deadline) {
+      if (ctrl.aborted) return;
+      const end = Math.min(chunkIdx + 10, deferredCount);
+      while (chunkIdx < end) {
+        const els = renderMsgDesc(msgDescs[chunkIdx]);
+        els.forEach(el => { el.setAttribute('data-msg-idx', chunkIdx); deferredFrag.appendChild(el); });
+        chunkIdx++;
+        if (deadline && deadline.timeRemaining && deadline.timeRemaining() < 2) break;
+      }
+      if (chunkIdx < deferredCount) {
+        if (typeof requestIdleCallback === 'function') requestIdleCallback(buildChunk, { timeout: 100 });
+        else setTimeout(() => buildChunk(null), 16);
+      } else {
+        // All built — single DOM insert
+        if (!ctrl.aborted && deferredPlaceholder.parentNode) {
+          const prevScrollTop = messagesEl.scrollTop;
+          const prevScrollHeight = messagesEl.scrollHeight;
+          deferredPlaceholder.replaceWith(deferredFrag);
+          messagesEl.scrollTop = prevScrollTop + (messagesEl.scrollHeight - prevScrollHeight);
+          allMessagesRendered = true;
+        }
+      }
+    }
+
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(buildChunk, { timeout: 100 });
+    else setTimeout(() => buildChunk(null), 16);
+  }
 }
 
 // --- Session preview popover ---
@@ -1346,6 +1392,9 @@ let chatHits = [];
 let chatHitIndex = -1;
 
 function doChatSearch() {
+  // Flush deferred rendering so all messages are searchable
+  if (!allMessagesRendered && window._flushRender) window._flushRender();
+
   const q = document.getElementById('chatSearch').value.trim();
   const countEl = document.getElementById('chatSearchCount');
   const messagesEl = document.getElementById('detailMessages');
@@ -1451,6 +1500,13 @@ function renderSearchLoading() {
   el.appendChild(msg);
 }
 
+function sanitizeSnippet(raw) {
+  const sanitized = DOMPurify.sanitize(raw, { ALLOWED_TAGS: ['b'] })
+    .replace(/<b>/g, '<mark style="background:var(--hit-bg);color:inherit;border-radius:2px;padding:0 1px;">')
+    .replace(/<\/b>/g, '</mark>');
+  return DOMPurify.sanitize(sanitized, { ALLOWED_TAGS: ['mark'], ALLOWED_ATTR: ['style'] });
+}
+
 function renderSearchResults() {
   const el = document.getElementById('sessionList');
   el.replaceChildren();
@@ -1467,75 +1523,105 @@ function renderSearchResults() {
   document.getElementById('sessionListTitle').textContent =
     t('searchResults').replace('{n}', searchResults.length);
 
+  // Group hits: project → session → hits[]
+  const projMap = {};
+  const projOrder = [];
   searchResults.forEach(hit => {
-    const sessionSummary = sessions.find(s => s.sessionId === hit.sessionId);
-    const title = sessionSummary ? sessionSummary.firstDisplay : hit.sessionId.slice(0, 8);
-    const projName = projectDisplayName(hit.project);
+    if (!projMap[hit.project]) { projMap[hit.project] = {}; projOrder.push(hit.project); }
+    const sessMap = projMap[hit.project];
+    if (!sessMap[hit.sessionId]) sessMap[hit.sessionId] = [];
+    sessMap[hit.sessionId].push(hit);
+  });
 
-    const titleEl = createEl('div', { className: 'text-sm font-medium truncate' });
-    titleEl.style.color = 'var(--text-primary)';
-    titleEl.textContent = title;
+  projOrder.forEach(proj => {
+    const group = createEl('div', { className: 'project-group' });
 
-    const projEl = createEl('div', { className: 'text-[10px] truncate' });
-    projEl.style.color = 'var(--text-muted)';
-    projEl.textContent = projName;
+    // Project header (same style as session list)
+    const chevron = createEl('span', { className: 'project-group-chevron open', textContent: '\u25B6' });
+    const icon = createEl('span', { className: 'project-group-icon' });
+    icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5A1.5 1.5 0 013.5 3H6l1.5 2h5A1.5 1.5 0 0114 6.5v5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5z"/></svg>';
+    const sessMap = projMap[proj];
+    const hitCount = Object.values(sessMap).reduce((n, arr) => n + arr.length, 0);
+    const name = createEl('span', { className: 'text-xs font-medium flex-1 truncate', textContent: projectDisplayName(proj) });
+    name.style.color = 'var(--text-secondary)';
+    const count = createEl('span', { className: 'text-[10px] flex-shrink-0', textContent: hitCount + '' });
+    count.style.color = 'var(--text-muted)';
+    const header = createEl('div', { className: 'project-group-header' }, [chevron, icon, name, count]);
 
-    const snippetEl = createEl('div', { className: 'text-xs mt-1 line-clamp-2' });
-    snippetEl.style.cssText = 'color:var(--text-secondary);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;';
-    // Sanitize snippet — only allow <mark> tags
-    const cleaned = hit.snippet
-      .replace(/<(?!\/?b>)/g, '&lt;')
-      .replace(/<b>/g, '<mark style="background:var(--hit-bg);color:inherit;border-radius:2px;padding:0 1px;">')
-      .replace(/<\/b>/g, '</mark>');
-    snippetEl.innerHTML = cleaned;
+    const sessionsDiv = createEl('div', { className: 'project-group-sessions open' });
 
-    const metaEl = createEl('div', { className: 'text-[10px] mt-1' });
-    metaEl.style.color = 'var(--text-faint)';
-    metaEl.textContent = timeAgo(hit.timestamp);
+    // Sessions within this project
+    Object.keys(sessMap).forEach(sessionId => {
+      const hits = sessMap[sessionId];
+      const summary = sessions.find(s => s.sessionId === sessionId);
+      const title = summary ? summary.firstDisplay : sessionId.slice(0, 8);
 
-    const item = createEl('div', {
-      className: 'session-item p-3 rounded cursor-default border overflow-hidden',
-    }, [titleEl, projEl, snippetEl, metaEl]);
-    item.style.cssText = 'border-color:transparent;';
-    item.addEventListener('mouseenter', () => { item.style.background = 'var(--item-hover)'; });
-    item.addEventListener('mouseleave', () => { item.style.background = ''; });
-    item.addEventListener('click', () => {
-      selectedSession = hit.sessionId;
-      showDetail(hit.sessionId).then(() => {
-        scrollToMessageIndex(hit.messageIndex);
+      // Session header row
+      const sessHeader = createEl('div', { className: 'px-3 pt-2 pb-1' });
+      const sessTitle = createEl('p', { className: 'text-sm leading-snug truncate', textContent: title });
+      sessTitle.style.color = 'var(--text)';
+      const sessMeta = createEl('span', { className: 'text-[10px]', textContent: timeAgo(hits[0].timestamp) + ' · ' + hits.length + (hits.length === 1 ? ' hit' : ' hits') });
+      sessMeta.style.color = 'var(--text-faint)';
+      sessHeader.appendChild(sessTitle);
+      sessHeader.appendChild(sessMeta);
+      sessionsDiv.appendChild(sessHeader);
+
+      // Individual hits as snippet items
+      hits.forEach(hit => {
+        const snippetEl = createEl('div', { className: 'text-xs' });
+        snippetEl.style.cssText = 'color:var(--text-secondary);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;';
+        snippetEl.innerHTML = sanitizeSnippet(hit.snippet);
+
+        const item = createEl('div', { className: 'session-item px-3 py-1.5 rounded cursor-default border overflow-hidden' });
+        item.style.cssText = 'border-color:transparent;margin:0 4px;';
+        item.appendChild(snippetEl);
+        item.addEventListener('mouseenter', () => { item.style.background = 'var(--item-hover)'; });
+        item.addEventListener('mouseleave', () => { item.style.background = ''; });
+        item.addEventListener('click', () => {
+          // Deselect previous
+          el.querySelectorAll('.session-item-active').forEach(prev => {
+            prev.classList.remove('session-item-active');
+            prev.style.borderColor = 'transparent';
+            prev.style.background = '';
+          });
+          item.classList.add('session-item-active');
+          item.style.borderColor = 'var(--accent)';
+          selectedSession = hit.sessionId;
+          showDetail(hit.sessionId).then(() => {
+            scrollToMessageIndex(hit.messageIndex);
+          });
+        });
+        sessionsDiv.appendChild(item);
       });
     });
 
-    el.appendChild(item);
+    header.addEventListener('click', () => {
+      chevron.classList.toggle('open');
+      sessionsDiv.classList.toggle('open');
+    });
+
+    group.appendChild(header);
+    group.appendChild(sessionsDiv);
+    el.appendChild(group);
   });
 }
 
 function scrollToMessageIndex(messageIndex) {
   const messagesEl = document.getElementById('detailMessages');
-  // Look for placeholder with data-idx matching messageIndex
-  const placeholder = messagesEl.querySelector(`[data-idx="${messageIndex}"]`);
-  if (placeholder) {
-    placeholder.scrollIntoView({ block: 'center' });
-    // Wait for IntersectionObserver to render, then scroll again
-    setTimeout(() => {
-      const rendered = messagesEl.querySelectorAll('.chat-bubble');
-      if (rendered.length > messageIndex) {
-        rendered[messageIndex].scrollIntoView({ block: 'center' });
-        rendered[messageIndex].style.outline = '2px solid var(--accent)';
-        rendered[messageIndex].style.outlineOffset = '2px';
-        setTimeout(() => { rendered[messageIndex].style.outline = ''; rendered[messageIndex].style.outlineOffset = ''; }, 2000);
-      }
-    }, 300);
-    return;
+
+  function highlightEl(el) {
+    el.scrollIntoView({ block: 'center' });
+    el.style.outline = '2px solid var(--accent)';
+    el.style.outlineOffset = '2px';
+    el.style.borderRadius = '12px';
+    setTimeout(() => { el.style.outline = ''; el.style.outlineOffset = ''; }, 2000);
   }
-  // If no placeholder, try rendered bubbles directly
-  const bubbles = messagesEl.querySelectorAll('.chat-bubble');
-  if (bubbles.length > messageIndex) {
-    bubbles[messageIndex].scrollIntoView({ block: 'center' });
-    bubbles[messageIndex].style.outline = '2px solid var(--accent)';
-    bubbles[messageIndex].style.outlineOffset = '2px';
-    setTimeout(() => { bubbles[messageIndex].style.outline = ''; bubbles[messageIndex].style.outlineOffset = ''; }, 2000);
-  }
+
+  // Flush deferred rendering if needed
+  if (!allMessagesRendered && window._flushRender) window._flushRender();
+
+  const el = messagesEl.querySelector(`[data-msg-idx="${messageIndex}"]`);
+  if (el) highlightEl(el);
 }
 
 // --- Resize handle ---
