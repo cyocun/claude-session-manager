@@ -5,6 +5,16 @@ let previewEl = null;
 let previewTimer = null;
 let previewSessionId = null;
 let previewAnchorRect = null;
+const PREVIEW_CACHE_MAX = 200;
+function trimPreviewCache() {
+    const keys = Object.keys(previewCache);
+    const overflow = keys.length - PREVIEW_CACHE_MAX;
+    if (overflow <= 0)
+        return;
+    for (let i = 0; i < overflow; i++) {
+        delete previewCache[keys[i]];
+    }
+}
 function clearTimer() {
     if (previewTimer !== null) {
         clearTimeout(previewTimer);
@@ -69,7 +79,10 @@ function showPreview(sessionId, anchorRect) {
     previewEl.replaceChildren(loadingInner);
     positionPreview();
     invoke('get_session_detail', { sessionId }).then((detail) => {
+        if (!detail)
+            return;
         previewCache[sessionId] = detail;
+        trimPreviewCache();
         if (previewSessionId === sessionId)
             renderPreview(detail);
     });
@@ -83,7 +96,10 @@ export function getPreviewDetailCached(sessionId) {
     return previewCache[sessionId] ?? null;
 }
 export function setPreviewDetailCached(sessionId, detail) {
+    if (!detail)
+        return;
     previewCache[sessionId] = detail;
+    trimPreviewCache();
 }
 export function schedulePreviewShow(sessionId, anchorRect) {
     clearTimer();

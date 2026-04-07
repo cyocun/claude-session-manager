@@ -1,26 +1,32 @@
 # Claude Session Manager
 
-Claude Code の会話履歴を一元管理する **Tauri デスクトップアプリ**。複数ディレクトリで実行されたセッションを横断的に閲覧・検索・再開できます。
+A desktop app to browse, search, and resume Claude Code sessions across projects.
+
+Claude Session Manager reads your local `~/.claude` history and gives you a fast UI for session discovery, full-text search, and resume workflows.
 
 ## Features
 
-- **プロジェクト横断管理** — `~/.claude/` の全セッションをプロジェクトごとに表示
-- **全文検索** — Tantivy ベースのセッション横断検索
-- **チャット表示** — Markdown / シンタックスハイライト / ツール実行ブロック表示
-- **Resume** — Terminal / iTerm2 / Warp / Ghostty / cmux で即再開
-- **アーカイブ** — セッション/プロジェクト単位で非表示化
-- **テーマ / i18n** — ライト・ダーク・システム / 日本語・English
+- Cross-project session list with grouping and archive support
+- Full-text search powered by Tantivy (Rust)
+- Chat detail view with Markdown rendering and code highlighting
+- Tool block rendering (Bash/Edit/Write/Read/Glob/Grep + results)
+- Quick resume actions for Terminal / iTerm2 / Warp / Ghostty / cmux
+- Theme support (Light / Dark / System) and language switch (ja / en)
+
+## Platform
+
+- macOS (current primary target)
 
 ## Requirements
 
 - Node.js 18+
+- npm
 - Rust (stable)
-- Xcode Command Line Tools (macOS)
+- Xcode Command Line Tools
 
-## Setup
+## Quick Start
 
 ```bash
-cd claude-session-manager
 npm install
 npm run tauri:dev
 ```
@@ -31,21 +37,41 @@ npm run tauri:dev
 npm run tauri:build
 ```
 
-## Data
+## Development
 
-読み取り元:
+```bash
+# Type check frontend TS
+npm run check:types
+
+# Build frontend assets
+npm run build:frontend
+
+# Run Rust tests
+cd src-tauri && cargo test
+```
+
+## Data Sources
+
+### Read
+
 - `~/.claude/history.jsonl`
-- `~/.claude/projects/{encoded-path}/{sessionId}.jsonl`
+- `~/.claude/projects/**/{sessionId}.jsonl`
 
-書き込み:
+### Write
+
 - `~/Library/Application Support/com.cyocun.claude-session-manager/archive.json`
 - `~/Library/Application Support/com.cyocun.claude-session-manager/settings.json`
 - `~/Library/Application Support/com.cyocun.claude-session-manager/search-index/`
 
-## Stack
+## Notes
 
-- **Desktop**: Tauri v2 (Rust)
-- **Frontend**: Single-page HTML + vanilla JavaScript
+- This app works on local files only.
+- On startup, the app clears WebView cache to avoid stale rendering.
+
+## Tech Stack
+
+- Desktop: Tauri v2 (Rust)
+- Frontend: Single-page HTML + TypeScript (compiled to JS)
 
 ## License
 

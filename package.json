@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build:frontend": "tsc -p tsconfig.json",
-    "tauri": "tauri",
+    "tauri": "npm run build:frontend && tauri",
     "tauri:dev": "npm run build:frontend && tauri dev",
     "tauri:build": "npm run build:frontend && tauri build",
     "check:types": "tsc -p tsconfig.json --noEmit"

@@ -20,6 +20,10 @@ export function createSessionActions(deps) {
     }
     async function copyResume(sessionId) {
         const data = await invoke('get_resume_command', { sessionId });
+        if (!data?.command) {
+            showToast(t('toastError'));
+            return;
+        }
         await copyText(data.command);
         showToast(t('toastCopied'));
     }

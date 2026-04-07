@@ -35,12 +35,12 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     chatSearch,
   } = deps;
 
-  let searchMode: 'filter' | 'fulltext' = 'filter';
+  let searchMode: 'filter' | 'fulltext' | 'similar' = 'filter';
   let searchResults: SearchHit[] = [];
   let searchIndexReady = false;
   let fulltextSearchTimer: ReturnType<typeof setTimeout> | null = null;
 
-  function getMode(): 'filter' | 'fulltext' {
+  function getMode(): 'filter' | 'fulltext' | 'similar' {
     return searchMode;
   }
 
@@ -49,14 +49,19 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
   }
 
   function toggleMode(): void {
-    searchMode = searchMode === 'filter' ? 'fulltext' : 'filter';
+    searchMode = searchMode === 'filter' ? 'fulltext' : searchMode === 'fulltext' ? 'similar' : 'filter';
     const btn = byId('searchModeBtn');
     const search = byId('search') as HTMLInputElement;
     if (searchMode === 'fulltext') {
       btn.style.background = 'var(--accent)';
       btn.style.color = '#fff';
-      btn.title = t('filterMode');
+      btn.title = t('searchSimilar');
       search.placeholder = t('searchContent');
+    } else if (searchMode === 'similar') {
+      btn.style.background = 'var(--accent)';
+      btn.style.color = '#fff';
+      btn.title = t('filterMode');
+      search.placeholder = t('searchSimilar');
     } else {
       btn.style.background = '';
       btn.style.color = '';
@@ -66,14 +71,14 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
       renderSessions();
     }
     const q = search.value.trim();
-    if (q && searchMode === 'fulltext') {
+    if (q && (searchMode === 'fulltext' || searchMode === 'similar')) {
       void perform(q);
     }
   }
 
   function onSearchInput(): void {
     const search = byId('search') as HTMLInputElement;
-    if (searchMode === 'fulltext') {
+    if (searchMode === 'fulltext' || searchMode === 'similar') {
       if (fulltextSearchTimer) clearTimeout(fulltextSearchTimer);
       fulltextSearchTimer = setTimeout(() => {
         void perform(search.value.trim());
@@ -93,9 +98,29 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     searchResults = await invoke('search_sessions', {
       query,
       project: getSelectedProject() || null,
-      limit: 50,
+      limit: searchMode === 'similar' ? 80 : 50,
     }) || [];
     renderResults();
+  }
+
+  async function fetchContextSnippet(hit: SearchHit): Promise<{ before: string; current: string; after: string; likely: string } | null> {
+    const detail = await invoke('get_session_detail', { sessionId: hit.sessionId });
+    if (!detail?.messages || !Array.isArray(detail.messages)) return null;
+    const idx = Math.max(0, hit.messageIndex | 0);
+    const msgs = detail.messages as Array<{ type: string; content?: string }>;
+    const pick = (i: number) => (msgs[i]?.content || '').trim().replace(/\s+/g, ' ').slice(0, 220);
+    const before = idx > 0 ? pick(idx - 1) : '';
+    const current = pick(idx);
+    const after = idx + 1 < msgs.length ? pick(idx + 1) : '';
+    let likely = '';
+    for (let i = idx + 1; i < Math.min(idx + 8, msgs.length); i++) {
+      const m = msgs[i];
+      if (m?.type === 'assistant' && (m.content || '').trim()) {
+        likely = (m.content || '').trim().replace(/\s+/g, ' ').slice(0, 240);
+        break;
+      }
+    }
+    return { before, current, after, likely };
   }
 
   function renderLoading(): void {
@@ -124,9 +149,13 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
       const msg = document.createElement('div');
       msg.className = 'text-xs text-center py-8';
       msg.style.color = 'var(--text-faint)';
-      msg.textContent = searchIndexReady ? t('searchNoResults') : (lang === 'ja' ? 'インデックス構築中...' : 'Indexing...');
+      msg.textContent = searchIndexReady
+        ? (searchMode === 'similar' ? t('similarNoResults') : t('searchNoResults'))
+        : (lang === 'ja' ? 'インデックス構築中...' : 'Indexing...');
       el.appendChild(msg);
-      byId('sessionListTitle').textContent = searchIndexReady ? t('searchNoResults') : (lang === 'ja' ? 'インデックス構築中...' : 'Indexing...');
+      byId('sessionListTitle').textContent = searchIndexReady
+        ? (searchMode === 'similar' ? t('similarNoResults') : t('searchNoResults'))
+        : (lang === 'ja' ? 'インデックス構築中...' : 'Indexing...');
       return;
     }
 
@@ -212,8 +241,28 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
           item.className = `${isUser ? 'bubble-user' : 'bubble-assistant'} px-3 py-1.5 cursor-default overflow-hidden`;
           item.style.cssText = `margin:3px 4px;font-size:12px;max-width:none;${isUser ? 'margin-left:30px;' : 'margin-right:30px;'}`;
           item.appendChild(snippetEl);
+          const contextEl = document.createElement('div');
+          contextEl.className = 'text-[11px] mt-1';
+          contextEl.style.cssText = 'color:var(--text-faint);display:none;line-height:1.45;';
+          item.appendChild(contextEl);
           item.addEventListener('mouseenter', () => { item.style.opacity = '0.8'; });
           item.addEventListener('mouseleave', () => { item.style.opacity = ''; });
+          if (searchMode === 'similar') {
+            contextEl.style.display = 'block';
+            contextEl.textContent = t('loadingContext');
+            void fetchContextSnippet(hit).then((ctx) => {
+              if (!ctx) {
+                contextEl.textContent = '';
+                return;
+              }
+              const lines: string[] = [];
+              if (ctx.before) lines.push(`↑ ${ctx.before}`);
+              if (ctx.current) lines.push(`• ${ctx.current}`);
+              if (ctx.after) lines.push(`↓ ${ctx.after}`);
+              if (ctx.likely) lines.push(`${t('likelySolution')}: ${ctx.likely}`);
+              contextEl.textContent = lines.join('\n');
+            });
+          }
           item.addEventListener('click', () => {
             el.querySelectorAll('.search-hit-active').forEach((prev: Element) => {
               prev.classList.remove('search-hit-active');

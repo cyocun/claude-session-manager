@@ -35,6 +35,53 @@ type ProjectGroup = { path: string; sessions: SessionSummary[] };
 type DetailMessage = { type: string; content?: string; tools?: any[] };
 type SessionDetail = { project: string; messages: DetailMessage[] };
 type MsgDesc = { msg: DetailMessage; hasText: boolean; hasTools: boolean; origIdx: number };
+type ProjectSummary = { project: string; sessionCount: number; generatedAt: number; summary: string };
+type TokenTotals = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  totalTokens: number;
+  estimatedCostUsd: number;
+};
+type TokenProjectRow = {
+  project: string;
+  sessionCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  totalTokens: number;
+  estimatedCostUsd: number;
+};
+type TokenTimePoint = {
+  label: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  estimatedCostUsd: number;
+};
+type TokenSessionRow = {
+  sessionId: string;
+  project: string;
+  lastTimestamp: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  totalTokens: number;
+  estimatedCostUsd: number;
+};
+type TokenDashboard = {
+  totals: TokenTotals;
+  byProject: TokenProjectRow[];
+  byDay: TokenTimePoint[];
+  byWeek: TokenTimePoint[];
+  byMonth: TokenTimePoint[];
+  bySession: TokenSessionRow[];
+};
+type DecisionItem = { project: string; sessionId: string; timestamp: number; kind: string; text: string };
+type DecisionHistory = { project: string; items: DecisionItem[] };
 
 let lang = detectLang();
 function t(key: string): string { return translate(lang, key); }
@@ -52,6 +99,17 @@ function applyI18n() {
   const cs = byId('chatSearch');
   if (cs) cs.placeholder = t('chatSearchPlaceholder');
   byId('newSessionBtn').title = lang === 'ja' ? '新規セッション' : 'New Session';
+  const tokenBtn = byId('tokenDashboardBtn') as HTMLButtonElement | null;
+  if (tokenBtn) tokenBtn.title = t('tokenDashboard');
+  const searchModeBtn = byId('searchModeBtn') as HTMLButtonElement | null;
+  const mode = fullTextSearch.getMode();
+  if (searchModeBtn) {
+    searchModeBtn.title = mode === 'filter'
+      ? t('searchContent')
+      : mode === 'fulltext'
+        ? t('searchSimilar')
+        : t('filterMode');
+  }
 }
 
 // --- Theme ---
@@ -90,6 +148,9 @@ let knownTimestamps: Record<string, number> = {}; // sessionId -> lastTimestamp 
 let isFirstLoad = true;
 let allMessagesRendered = true;
 let renderAbort: { aborted: boolean } | null = null;
+let projectSummaryModal: HTMLElement | null = null;
+let tokenModal: HTMLElement | null = null;
+let isPreviewHotkeyPressed = false;
 // Search controllers are pure modules; app.ts wires them to current state/getters.
 const chatSearch = createChatSearchController({
   byId,
@@ -155,6 +216,11 @@ function isRemote() {
   return isRemoteHost(location.hostname);
 }
 
+function isDetailPaneVisible(): boolean {
+  const pane = byId('detailPane') as HTMLElement | null;
+  return !!pane && pane.style.display !== 'none';
+}
+
 // --- Rendering ---
 
 function renderProjects() {
@@ -182,6 +248,369 @@ function isProjectOpen(g: ProjectGroup): boolean {
 
 function saveToggled() {
   localStorage.setItem('csm-toggled', JSON.stringify([...toggledProjects]));
+}
+
+function formatNum(n: number | undefined): string {
+  return Intl.NumberFormat(lang === 'ja' ? 'ja-JP' : 'en-US').format(Math.round(n || 0));
+}
+
+function formatUsd(v: number | undefined): string {
+  return '$' + ((v || 0)).toFixed(3);
+}
+
+function parseTokenLimit(name: string): number {
+  const raw = localStorage.getItem(name);
+  if (!raw) return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+}
+
+function saveTokenLimit(name: string, value: string) {
+  const n = Number(value);
+  if (!value.trim() || !Number.isFinite(n) || n <= 0) {
+    localStorage.removeItem(name);
+    return;
+  }
+  localStorage.setItem(name, String(Math.round(n)));
+}
+
+function drawTokenTrend(canvas: HTMLCanvasElement, points: TokenTimePoint[]) {
+  const parentWidth = canvas.parentElement?.clientWidth || 760;
+  const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+  const width = Math.max(320, parentWidth - 16);
+  const height = 220;
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  if (!points.length) return;
+  const maxY = Math.max(...points.map(p => p.totalTokens), 1);
+  const padL = 42;
+  const padR = 10;
+  const padT = 12;
+  const padB = 24;
+  const chartW = width - padL - padR;
+  const chartH = height - padT - padB;
+  const x = (i: number) => padL + (points.length === 1 ? chartW / 2 : (i * chartW) / (points.length - 1));
+  const y = (v: number) => padT + (1 - v / maxY) * chartH;
+
+  ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--border').trim() || '#888';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const gy = padT + (chartH * i) / 4;
+    ctx.beginPath();
+    ctx.moveTo(padL, gy);
+    ctx.lineTo(width - padR, gy);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#0a84ff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  points.forEach((p, i) => {
+    const px = x(i);
+    const py = y(p.totalTokens);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  });
+  ctx.stroke();
+
+  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text-faint').trim() || '#888';
+  ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(formatNum(maxY), 4, padT + 3);
+  ctx.fillText('0', 14, padT + chartH + 3);
+  ctx.textAlign = 'center';
+  const tickIdx = [0, Math.floor((points.length - 1) / 2), points.length - 1].filter((v, i, a) => a.indexOf(v) === i);
+  tickIdx.forEach(i => {
+    ctx.fillText(points[i].label, x(i), height - 6);
+  });
+}
+
+function closeTokenModal() {
+  if (!tokenModal) return;
+  tokenModal.remove();
+  tokenModal = null;
+}
+
+function mkTokenTable(headers: string[], rows: string[][]): HTMLElement {
+  const table = createEl('table', { className: 'token-table' });
+  const thead = createEl('thead');
+  const trh = createEl('tr');
+  headers.forEach(h => trh.appendChild(createEl('th', { textContent: h })));
+  thead.appendChild(trh);
+  table.appendChild(thead);
+  const tbody = createEl('tbody');
+  rows.forEach(r => {
+    const tr = createEl('tr');
+    r.forEach(c => tr.appendChild(createEl('td', { textContent: c })));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  return table;
+}
+
+async function openTokenModal(): Promise<void> {
+  closeTokenModal();
+  const modal = createEl('div', {
+    className: 'project-summary-modal',
+    onClick: (e: Event) => {
+      if (e.target === modal) closeTokenModal();
+    }
+  });
+  const title = createEl('div', { className: 'text-sm font-medium truncate', textContent: t('tokenTitle') });
+  title.style.color = 'var(--text-secondary)';
+  const refreshBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('tokenRefresh') });
+  const closeBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('tokenClose') });
+  const body = createEl('div', { className: 'project-summary-body', textContent: t('loading') });
+  const header = createEl('div', { className: 'project-summary-header' }, [title, createEl('span'), refreshBtn, closeBtn]);
+  const dialog = createEl('div', { className: 'project-summary-dialog' }, [header, body]);
+  modal.appendChild(dialog);
+  document.body.appendChild(modal);
+  tokenModal = modal;
+  (modal as HTMLElement).tabIndex = -1;
+  (modal as HTMLElement).focus();
+
+  closeBtn.addEventListener('click', () => closeTokenModal());
+  modal.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'Escape') closeTokenModal();
+  });
+
+  async function renderData() {
+    body.replaceChildren(createEl('div', { textContent: t('loading') }));
+    const data = await invoke('get_token_dashboard') as TokenDashboard | null;
+    if (!data || !data.totals || data.totals.totalTokens === 0) {
+      body.replaceChildren(createEl('div', { className: 'text-xs', textContent: t('tokenNoData') }));
+      return;
+    }
+    body.replaceChildren();
+
+    const grid = createEl('div', { className: 'token-grid' }, [
+      createEl('div', { className: 'token-card' }, [createEl('div', { className: 'token-card-label', textContent: t('tokenTotal') }), createEl('div', { className: 'token-card-value', textContent: formatNum(data.totals.totalTokens) })]),
+      createEl('div', { className: 'token-card' }, [createEl('div', { className: 'token-card-label', textContent: t('tokenInput') }), createEl('div', { className: 'token-card-value', textContent: formatNum(data.totals.inputTokens) })]),
+      createEl('div', { className: 'token-card' }, [createEl('div', { className: 'token-card-label', textContent: t('tokenOutput') }), createEl('div', { className: 'token-card-value', textContent: formatNum(data.totals.outputTokens) })]),
+      createEl('div', { className: 'token-card' }, [createEl('div', { className: 'token-card-label', textContent: t('tokenCacheRead') }), createEl('div', { className: 'token-card-value', textContent: formatNum(data.totals.cacheReadInputTokens) })]),
+      createEl('div', { className: 'token-card' }, [createEl('div', { className: 'token-card-label', textContent: t('tokenEstimatedCost') }), createEl('div', { className: 'token-card-value', textContent: formatUsd(data.totals.estimatedCostUsd) })]),
+    ]);
+    body.appendChild(grid);
+
+    const limitInput = parseTokenLimit('csm-token-limit-input');
+    const limitOutput = parseTokenLimit('csm-token-limit-output');
+    const limitTotal = parseTokenLimit('csm-token-limit-total');
+    body.appendChild(createEl('div', { className: 'token-section-title', textContent: t('tokenLimitUsage') }));
+    const mkLimit = (label: string, used: number, limit: number, key: string) => {
+      const pct = limit > 0 ? Math.round((used / limit) * 100) : 0;
+      const over = limit > 0 && used > limit;
+      const remain = limit > 0 ? Math.max(0, limit - used) : 0;
+      const fill = createEl('div', { className: 'token-limit-bar-fill' }) as HTMLElement;
+      fill.style.width = `${Math.min(100, pct)}%`;
+      const input = createEl('input', {
+        className: 'token-limit-input',
+        type: 'number',
+        min: '0',
+        placeholder: t('tokenLimitUnset'),
+        value: limit > 0 ? String(limit) : '',
+      }) as HTMLInputElement;
+      const saveBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('tokenLimitSave') });
+      saveBtn.addEventListener('click', () => {
+        saveTokenLimit(key, input.value);
+        saveBtn.textContent = t('tokenLimitSaved');
+        setTimeout(() => { saveBtn.textContent = t('tokenLimitSave'); }, 900);
+        void renderData();
+      });
+      const card = createEl('div', { className: 'token-limit-card' + (over ? ' token-limit-over' : '') }, [
+        createEl('div', { className: 'token-limit-label', textContent: label }),
+        createEl('div', { className: 'token-limit-value', textContent: limit > 0 ? `${formatNum(used)} / ${formatNum(limit)} (${pct}%)` : `${formatNum(used)} / -` }),
+        createEl('div', { className: 'token-limit-bar' }, [fill]),
+        createEl('div', {
+          className: 'text-[11px]',
+          textContent: limit > 0 ? (over ? t('tokenLimitExceeded') : `${t('tokenRemaining')}: ${formatNum(remain)}`) : ''
+        }),
+        createEl('div', { className: 'token-limit-input-row' }, [input, saveBtn]),
+      ]);
+      return card;
+    };
+    body.appendChild(createEl('div', { className: 'token-limit-grid' }, [
+      mkLimit(t('tokenLimitInput'), data.totals.inputTokens, limitInput, 'csm-token-limit-input'),
+      mkLimit(t('tokenLimitOutput'), data.totals.outputTokens, limitOutput, 'csm-token-limit-output'),
+      mkLimit(t('tokenLimitTotal'), data.totals.totalTokens, limitTotal, 'csm-token-limit-total'),
+    ]));
+
+    body.appendChild(createEl('div', { className: 'token-section-title', textContent: t('tokenTrend') }));
+    const controls = createEl('div', { className: 'token-controls' });
+    const dailyBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('tokenPeriodDay') });
+    const weeklyBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('tokenPeriodWeek') });
+    const monthlyBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('tokenPeriodMonth') });
+    controls.append(dailyBtn, weeklyBtn, monthlyBtn);
+    body.appendChild(controls);
+    const chartWrap = createEl('div', { className: 'token-chart-wrap' });
+    const canvas = createEl('canvas', { className: 'token-chart' }) as HTMLCanvasElement;
+    chartWrap.appendChild(canvas);
+    body.appendChild(chartWrap);
+    let currentPoints: TokenTimePoint[] = data.byDay.slice(-30);
+    const renderTrend = () => drawTokenTrend(canvas, currentPoints);
+    dailyBtn.addEventListener('click', () => { currentPoints = data.byDay.slice(-30); renderTrend(); });
+    weeklyBtn.addEventListener('click', () => { currentPoints = data.byWeek.slice(-26); renderTrend(); });
+    monthlyBtn.addEventListener('click', () => { currentPoints = data.byMonth.slice(-24); renderTrend(); });
+    renderTrend();
+
+    body.appendChild(createEl('div', { className: 'token-section-title', textContent: t('tokenProjectCompare') }));
+    const maxProjectTokens = Math.max(...data.byProject.slice(0, 12).map(p => p.totalTokens), 1);
+    const barList = createEl('div', { className: 'token-bar-list' });
+    data.byProject.slice(0, 12).forEach((p) => {
+      const fill = createEl('div', { className: 'token-limit-bar-fill' }) as HTMLElement;
+      fill.style.width = `${Math.max(2, Math.round((p.totalTokens / maxProjectTokens) * 100))}%`;
+      barList.appendChild(createEl('div', { className: 'token-bar-row' }, [
+        createEl('div', { className: 'truncate', textContent: projectDisplayName(p.project) }),
+        createEl('div', { className: 'token-limit-bar' }, [fill]),
+        createEl('div', { className: 'text-xs', textContent: formatNum(p.totalTokens) }),
+      ]));
+    });
+    body.appendChild(barList);
+    body.appendChild(mkTokenTable(
+      ['Project', 'Sessions', t('tokenTotal'), t('tokenEstimatedCost')],
+      data.byProject.slice(0, 20).map(p => [projectDisplayName(p.project), String(p.sessionCount), formatNum(p.totalTokens), formatUsd(p.estimatedCostUsd)])
+    ));
+
+    body.appendChild(createEl('div', { className: 'token-section-title', textContent: t('tokenByDay') }));
+    body.appendChild(mkTokenTable(
+      ['Date', t('tokenInput'), t('tokenOutput'), t('tokenTotal')],
+      data.byDay.slice(-14).map(d => [d.label, formatNum(d.inputTokens), formatNum(d.outputTokens), formatNum(d.totalTokens)])
+    ));
+
+    body.appendChild(createEl('div', { className: 'token-section-title', textContent: t('tokenByWeek') }));
+    body.appendChild(mkTokenTable(
+      ['Week', t('tokenTotal'), t('tokenEstimatedCost')],
+      data.byWeek.slice(-12).map(w => [w.label, formatNum(w.totalTokens), formatUsd(w.estimatedCostUsd)])
+    ));
+
+    body.appendChild(createEl('div', { className: 'token-section-title', textContent: t('tokenByMonth') }));
+    body.appendChild(mkTokenTable(
+      ['Month', t('tokenTotal'), t('tokenEstimatedCost')],
+      data.byMonth.slice(-12).map(m => [m.label, formatNum(m.totalTokens), formatUsd(m.estimatedCostUsd)])
+    ));
+
+    body.appendChild(createEl('div', { className: 'token-section-title', textContent: t('tokenBySession') }));
+    body.appendChild(mkTokenTable(
+      ['Session', 'Project', t('tokenTotal')],
+      data.bySession.slice(0, 25).map(s => [s.sessionId.slice(0, 8), projectDisplayName(s.project), formatNum(s.totalTokens)])
+    ));
+  }
+
+  refreshBtn.addEventListener('click', () => { void renderData(); });
+  void renderData();
+}
+
+function closeProjectSummaryModal() {
+  if (!projectSummaryModal) return;
+  projectSummaryModal.remove();
+  projectSummaryModal = null;
+}
+
+async function openProjectSummaryModal(projectPath: string): Promise<void> {
+  closeProjectSummaryModal();
+
+  const modal = createEl('div', {
+    className: 'project-summary-modal',
+    onClick: (e: Event) => {
+      if (e.target === modal) closeProjectSummaryModal();
+    }
+  });
+  const title = createEl('div', { className: 'text-sm font-medium truncate', textContent: projectDisplayName(projectPath) + ' — ' + t('projectSummary') });
+  title.style.color = 'var(--text-secondary)';
+  const status = createEl('span', { className: 'text-xs', textContent: '' });
+  status.style.color = 'var(--text-faint)';
+  const generateBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('generateSummary') });
+  const historyBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('decisionHistory') });
+  const closeBtn = createEl('button', { className: 'mac-btn text-xs', textContent: 'Close' });
+  const body = createEl('div', { className: 'project-summary-body', textContent: t('summaryGenerating') });
+  const header = createEl('div', { className: 'project-summary-header' }, [title, status, generateBtn, historyBtn, closeBtn]);
+  const dialog = createEl('div', { className: 'project-summary-dialog' }, [header, body]);
+  modal.appendChild(dialog);
+  document.body.appendChild(modal);
+  projectSummaryModal = modal;
+  (modal as HTMLElement).tabIndex = -1;
+  (modal as HTMLElement).focus();
+
+  closeBtn.addEventListener('click', () => closeProjectSummaryModal());
+  modal.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'Escape') closeProjectSummaryModal();
+  });
+
+  const renderSummary = (item: ProjectSummary | null) => {
+    if (!item?.summary) {
+      body.textContent = t('summaryNoData');
+      status.textContent = '';
+      generateBtn.textContent = t('generateSummary');
+      return;
+    }
+    const date = item.generatedAt ? new Date(item.generatedAt * 1000).toLocaleString(lang === 'ja' ? 'ja-JP' : 'en-US') : '';
+    status.textContent = date;
+    body.textContent = item.summary;
+    generateBtn.textContent = t('refreshSummary');
+  };
+
+  let generating = false;
+  async function generateSummary() {
+    if (generating) return;
+    generating = true;
+    generateBtn.setAttribute('disabled', 'true');
+    status.textContent = t('summaryGenerating');
+    try {
+      const item = await invoke('generate_project_summary', { project: projectPath });
+      if (!item) {
+        actions.showToast(t('toastError'));
+      } else {
+        renderSummary(item as ProjectSummary);
+      }
+    } finally {
+      generating = false;
+      generateBtn.removeAttribute('disabled');
+    }
+  }
+
+  generateBtn.addEventListener('click', () => { void generateSummary(); });
+  historyBtn.addEventListener('click', async () => {
+    body.replaceChildren(createEl('div', { textContent: t('loading') }));
+    const data = await invoke('get_project_decision_history', { project: projectPath }) as DecisionHistory | null;
+    if (!data || !data.items || data.items.length === 0) {
+      body.replaceChildren(createEl('div', { className: 'text-xs', textContent: t('decisionNoData') }));
+      return;
+    }
+    const list = createEl('div', { className: 'decision-list' });
+    const kindLabel = (k: string) => {
+      if (k === 'policy') return t('decisionKindPolicy');
+      if (k === 'adopt') return t('decisionKindAdopt');
+      if (k === 'reject') return t('decisionKindReject');
+      if (k === 'priority') return t('decisionKindPriority');
+      return k;
+    };
+    data.items.slice(0, 120).forEach((it) => {
+      const dt = it.timestamp ? new Date(it.timestamp).toLocaleString(lang === 'ja' ? 'ja-JP' : 'en-US') : '';
+      const meta = createEl('div', { className: 'decision-meta' }, [
+        createEl('span', { className: 'decision-kind', textContent: kindLabel(it.kind) }),
+        createEl('span', { textContent: it.sessionId.slice(0, 8) }),
+        createEl('span'),
+        createEl('span', { textContent: dt }),
+      ]);
+      const text = createEl('div', { className: 'decision-text', textContent: it.text });
+      const row = createEl('div', { className: 'decision-item' }, [meta, text]);
+      row.addEventListener('click', () => {
+        closeProjectSummaryModal();
+        selectedSession = it.sessionId;
+        void showDetail(it.sessionId);
+      });
+      list.appendChild(row);
+    });
+    body.replaceChildren(list);
+  });
+
+  const cached = await invoke('get_project_summary', { project: projectPath });
+  renderSummary((cached || null) as ProjectSummary | null);
 }
 
 function renderSessionItem(s: SessionSummary): HTMLElement {
@@ -263,7 +692,7 @@ function renderSessionItem(s: SessionSummary): HTMLElement {
 
   item.addEventListener('mouseenter', () => {
     if (!isActive) item.style.background = 'var(--item-hover)';
-    if (!isActive) {
+    if (!isActive && (isDetailPaneVisible() || isPreviewHotkeyPressed)) {
       schedulePreviewShow(s.sessionId, item.getBoundingClientRect());
     }
   });
@@ -322,10 +751,29 @@ function renderSessions() {
     name.style.color = 'var(--text-secondary)';
     const count = createEl('span', { className: 'text-[10px] flex-shrink-0', textContent: g.sessions.length + '' });
     count.style.color = 'var(--text-muted)';
+    const startBtn = createEl('button', {
+      className: 'project-start-btn',
+      textContent: '+',
+      title: t('startProjectSession'),
+      onClick: async (e: Event) => {
+        e.stopPropagation();
+        const result = await invoke('start_new_session_in_project', { project: g.path });
+        if (!result?.ok) actions.showToast(t('toastError') + (result?.error || ''));
+      }
+    });
+    const summaryBtn = createEl('button', {
+      className: 'project-summary-btn',
+      textContent: '\u2261',
+      title: t('projectSummary'),
+      onClick: (e: Event) => {
+        e.stopPropagation();
+        void openProjectSummaryModal(g.path);
+      }
+    });
 
     const icon = createEl('span', { className: 'project-group-icon' });
     icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5A1.5 1.5 0 013.5 3H6l1.5 2h5A1.5 1.5 0 0114 6.5v5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5z"/></svg>';
-    const header = createEl('div', { className: 'project-group-header' }, [chevron, icon, name, count]);
+    const header = createEl('div', { className: 'project-group-header' }, [chevron, icon, name, summaryBtn, startBtn, count]);
     if (projectNameMap[g.path]) header.title = shortPath(g.path);
 
     // Split sessions into recent (7 days) and older
@@ -663,6 +1111,13 @@ byId('search').addEventListener('input', () => {
   fullTextSearch.onSearchInput();
 });
 byId('searchModeBtn').addEventListener('click', () => fullTextSearch.toggleMode());
+byId('searchModeBtn').addEventListener('contextmenu', (e: Event) => {
+  e.preventDefault();
+  void openTokenModal();
+});
+byId('tokenDashboardBtn').addEventListener('click', () => {
+  void openTokenModal();
+});
 byId('archiveSelectedBtn').addEventListener('click', () => actions.archiveSelected());
 byId('newSessionBtn').addEventListener('click', async () => {
   const result = await invoke('start_new_session');
@@ -714,6 +1169,19 @@ applyTheme(themePref);
 applyI18n();
 initPreview();
 applyZoom();
+
+document.addEventListener('keydown', (e: KeyboardEvent) => {
+  isPreviewHotkeyPressed = e.altKey && e.shiftKey;
+});
+document.addEventListener('keyup', (e: KeyboardEvent) => {
+  if (e.key === 'Alt' || e.key === 'Shift') {
+    isPreviewHotkeyPressed = e.altKey && e.shiftKey;
+    if (!isPreviewHotkeyPressed && !isDetailPaneVisible()) hidePreview();
+  } else if (!e.altKey || !e.shiftKey) {
+    isPreviewHotkeyPressed = false;
+    if (!isDetailPaneVisible()) hidePreview();
+  }
+});
 
 Promise.all([fetchSessions(), fetchProjects(), fetchSettings()]).then(() => {
   // Sync menu state with saved preferences

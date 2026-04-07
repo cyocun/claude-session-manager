@@ -133,6 +133,15 @@ pub struct ProjectInfo {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct ProjectSummary {
+    pub project: String,
+    pub session_count: u32,
+    pub generated_at: u64,
+    pub summary: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct Settings {
     #[serde(default = "default_terminal")]
     pub terminal_app: String,
@@ -193,4 +202,80 @@ pub struct SearchIndexStatus {
     pub total_sessions: u32,
     pub indexed_sessions: u32,
     pub is_indexing: bool,
+}
+
+#[derive(Debug, Serialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenTotals {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub total_tokens: u64,
+    pub estimated_cost_usd: f64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenProjectRow {
+    pub project: String,
+    pub session_count: u32,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub total_tokens: u64,
+    pub estimated_cost_usd: f64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenTimePoint {
+    pub label: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub total_tokens: u64,
+    pub estimated_cost_usd: f64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenSessionRow {
+    pub session_id: String,
+    pub project: String,
+    pub last_timestamp: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub total_tokens: u64,
+    pub estimated_cost_usd: f64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenDashboard {
+    pub totals: TokenTotals,
+    pub by_project: Vec<TokenProjectRow>,
+    pub by_day: Vec<TokenTimePoint>,
+    pub by_week: Vec<TokenTimePoint>,
+    pub by_month: Vec<TokenTimePoint>,
+    pub by_session: Vec<TokenSessionRow>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDecisionItem {
+    pub project: String,
+    pub session_id: String,
+    pub timestamp: u64,
+    pub kind: String,
+    pub text: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDecisionHistory {
+    pub project: String,
+    pub items: Vec<ProjectDecisionItem>,
 }
