@@ -1,4 +1,27 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PastedContent {
+    #[serde(default)]
+    content: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RawHistoryEntry {
+    #[serde(default)]
+    display: String,
+    #[serde(default)]
+    timestamp: u64,
+    #[serde(default)]
+    project: String,
+    #[serde(default, rename = "sessionId")]
+    session_id: String,
+    #[serde(default)]
+    pasted_contents: HashMap<String, PastedContent>,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -11,6 +34,31 @@ pub struct HistoryEntry {
     pub project: String,
     #[serde(default, rename = "sessionId")]
     pub session_id: String,
+}
+
+impl From<RawHistoryEntry> for HistoryEntry {
+    fn from(raw: RawHistoryEntry) -> Self {
+        let mut display = raw.display;
+        if !raw.pasted_contents.is_empty() {
+            for (id, pc) in &raw.pasted_contents {
+                // Replace "[Pasted text #N ...]" with first line of content
+                let placeholder_prefix = format!("[Pasted text #{}", id);
+                if let Some(start) = display.find(&placeholder_prefix) {
+                    if let Some(end) = display[start..].find(']') {
+                        let first_line = pc.content.lines().next().unwrap_or("");
+                        let preview: String = first_line.chars().take(80).collect();
+                        display.replace_range(start..start + end + 1, &preview);
+                    }
+                }
+            }
+        }
+        HistoryEntry {
+            display,
+            timestamp: raw.timestamp,
+            project: raw.project,
+            session_id: raw.session_id,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Clone)]

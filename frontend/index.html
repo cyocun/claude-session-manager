@@ -288,12 +288,23 @@
     .show-older-pill:hover { background: var(--btn-bg-hover); }
 
     .session-preview {
-      position: fixed; z-index: 200; pointer-events: none;
-      width: 400px; height: 90vh; overflow-y: auto;
+      position: fixed; z-index: 200; pointer-events: auto;
+      width: 400px; max-height: 90vh; overflow: visible;
       background: var(--modal-bg); border: 1px solid var(--modal-border);
-      border-radius: 10px; padding: 12px 14px;
+      border-radius: 10px;
       box-shadow: 0 12px 40px rgba(0,0,0,0.2);
       font-size: 12px; line-height: 1.5;
+    }
+    .session-preview::before {
+      content: ''; position: absolute; left: -6px; top: var(--arrow-top, 50%);
+      width: 10px; height: 10px; background: var(--modal-bg);
+      border-left: 1px solid var(--modal-border);
+      border-bottom: 1px solid var(--modal-border);
+      transform: translateY(-50%) rotate(45deg); z-index: 1;
+    }
+    .session-preview-inner {
+      overflow-y: auto; max-height: 90vh; padding: 12px 14px;
+      border-radius: 10px;
     }
     .dark .session-preview { box-shadow: 0 12px 40px rgba(0,0,0,0.6); }
     .session-preview .preview-msg {
@@ -308,10 +319,6 @@
       background: var(--bubble-ai-bg); color: var(--bubble-ai-text);
       border: 1px solid var(--bubble-ai-border);
       border-radius: 10px 10px 10px 2px; margin-right: 40px;
-    }
-    .session-preview .preview-fade {
-      position: absolute; bottom: 0; left: 0; right: 0; height: 30px;
-      background: linear-gradient(transparent, var(--modal-bg));
     }
 
     .resize-handle {
@@ -405,10 +412,7 @@ const I18N = {
     toastError: 'エラー: ',
     hits: '件',
     msg: 'msg',
-    justNow: 'たった今',
-    minsAgo: '分前',
-    hoursAgo: '時間前',
-    daysAgo: '日前',
+    yesterday: '昨日',
     archiveProject: 'プロジェクトをアーカイブ',
     selectSession: 'セッションを選択してください',
   },
@@ -439,10 +443,7 @@ const I18N = {
     toastError: 'Error: ',
     hits: ' hits',
     msg: 'msg',
-    justNow: 'just now',
-    minsAgo: 'm ago',
-    hoursAgo: 'h ago',
-    daysAgo: 'd ago',
+    yesterday: 'Yesterday',
     archiveProject: 'Archive project',
     selectSession: 'Select a session',
   }
@@ -572,17 +573,35 @@ function projectDisplayName(path) {
 function isRemote() {
   return location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
 }
+function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text).catch(() => copyTextFallback(text));
+  }
+  return copyTextFallback(text);
+}
+function copyTextFallback(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;left:-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+}
 function timeAgo(ts) {
   if (!ts) return '';
-  const diff = Date.now() - ts;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return t('justNow');
-  if (mins < 60) return mins + t('minsAgo');
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return hours + t('hoursAgo');
-  const days = Math.floor(hours / 24);
-  if (days < 30) return days + t('daysAgo');
-  return new Date(ts).toLocaleDateString(lang === 'ja' ? 'ja-JP' : 'en-US');
+  const now = new Date();
+  const date = new Date(ts);
+  const locale = lang === 'ja' ? 'ja-JP' : 'en-US';
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfYesterday = startOfToday - 86400000;
+  const daysSinceMonday = (now.getDay() + 6) % 7;
+  const startOfWeek = startOfToday - daysSinceMonday * 86400000;
+  if (ts >= startOfToday) return date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+  if (ts >= startOfYesterday) return t('yesterday');
+  if (ts >= startOfWeek) return date.toLocaleDateString(locale, { weekday: lang === 'ja' ? 'short' : 'long' });
+  if (date.getFullYear() === now.getFullYear()) return date.toLocaleDateString(locale, { month: lang === 'ja' ? 'numeric' : 'short', day: 'numeric' });
+  return date.toLocaleDateString(locale, { year: 'numeric', month: lang === 'ja' ? 'numeric' : 'short', day: 'numeric' });
 }
 
 // --- Rendering ---
@@ -702,7 +721,7 @@ function renderSessionItem(s) {
   item.addEventListener('mouseleave', () => {
     if (!isActive) item.style.background = defaultBg;
     clearTimeout(previewTimer);
-    hidePreview();
+    previewTimer = setTimeout(hidePreview, 200);
   });
   return item;
 }
@@ -835,7 +854,9 @@ async function showDetail(sessionId) {
   // Switch from grid centering (empty state) to block for scrollable content
   messagesEl.style.display = 'block';
   messagesEl.replaceChildren();
+  messagesEl.scrollTop = 0;
   chatHits = []; chatHitIndex = -1;
+  hidePreview();
 
   const detail = previewCache[sessionId] || await fetchDetail(sessionId);
   previewCache[sessionId] = detail;
@@ -1015,21 +1036,37 @@ let previewSessionId = null;
 function initPreview() {
   previewEl = document.createElement('div');
   previewEl.className = 'session-preview hidden';
+  previewEl.addEventListener('mouseenter', () => clearTimeout(previewTimer));
+  previewEl.addEventListener('mouseleave', () => { previewTimer = setTimeout(hidePreview, 200); });
   document.body.appendChild(previewEl);
+}
+
+let previewAnchorRect = null;
+
+function positionPreview() {
+  if (!previewAnchorRect) return;
+  const listPane = document.getElementById('sessionListPane');
+  const x = listPane.getBoundingClientRect().right + 12;
+  previewEl.style.left = Math.max(10, Math.min(x, window.innerWidth - 420)) + 'px';
+  // Temporarily position off-screen to measure actual height
+  previewEl.style.top = '0px';
+  previewEl.style.visibility = 'hidden';
+  const actualH = previewEl.offsetHeight;
+  previewEl.style.visibility = '';
+  // Center vertically, then clamp to viewport
+  const anchorMid = previewAnchorRect.top + previewAnchorRect.height / 2;
+  const finalY = Math.max(10, Math.min(anchorMid - actualH / 2, window.innerHeight - actualH - 10));
+  previewEl.style.top = finalY + 'px';
+  // Arrow points at the hovered item, clamped to popover bounds
+  const arrowTop = Math.max(20, Math.min(anchorMid - finalY, actualH - 20));
+  previewEl.style.setProperty('--arrow-top', arrowTop + 'px');
 }
 
 function showPreview(sessionId, anchorRect) {
   if (previewSessionId === sessionId && !previewEl.classList.contains('hidden')) return;
   if (!anchorRect || (anchorRect.right === 0 && anchorRect.top === 0)) return;
   previewSessionId = sessionId;
-
-  // Position: to the right of session list column, vertically centered
-  const listPane = document.getElementById('sessionListPane');
-  const x = listPane.getBoundingClientRect().right + 8;
-  const previewH = window.innerHeight * 0.9;
-  const y = (window.innerHeight - previewH) / 2;
-  previewEl.style.left = Math.max(10, Math.min(x, window.innerWidth - 420)) + 'px';
-  previewEl.style.top = Math.max(10, y) + 'px';
+  previewAnchorRect = anchorRect;
 
   if (previewCache[sessionId]) {
     renderPreview(previewCache[sessionId]);
@@ -1037,7 +1074,10 @@ function showPreview(sessionId, anchorRect) {
   }
 
   previewEl.classList.remove('hidden');
-  previewEl.replaceChildren(createEl('span', { className: 'text-xs', textContent: '...' }));
+  const loadingInner = createEl('div', { className: 'session-preview-inner' });
+  loadingInner.appendChild(createEl('span', { className: 'text-xs', textContent: '...' }));
+  previewEl.replaceChildren(loadingInner);
+  positionPreview();
 
   invoke('get_session_detail', { sessionId }).then(detail => {
     previewCache[sessionId] = detail;
@@ -1047,7 +1087,8 @@ function showPreview(sessionId, anchorRect) {
 
 function renderPreview(detail) {
   previewEl.classList.remove('hidden');
-  previewEl.replaceChildren();
+  const inner = document.createElement('div');
+  inner.className = 'session-preview-inner';
 
   // Show last ~20 meaningful messages (preview is 90vh)
   const msgs = detail.messages.filter(m =>
@@ -1060,12 +1101,12 @@ function renderPreview(detail) {
     const div = document.createElement('div');
     div.className = 'preview-msg ' + (isUser ? 'preview-user' : 'preview-assistant');
     div.textContent = m.content.slice(0, 120) + (m.content.length > 120 ? '...' : '');
-    previewEl.appendChild(div);
+    inner.appendChild(div);
   });
 
-  const fade = document.createElement('div');
-  fade.className = 'preview-fade';
-  previewEl.appendChild(fade);
+  previewEl.replaceChildren(inner);
+  positionPreview();
+  inner.scrollTop = inner.scrollHeight;
 }
 
 function hidePreview() {
@@ -1242,7 +1283,7 @@ async function resumeInTerminal(sessionId) {
 }
 async function copyResume(sessionId) {
   const data = await invoke('get_resume_command', { sessionId });
-  await navigator.clipboard.writeText(data.command);
+  await copyText(data.command);
   showToast(t('toastCopied'));
 }
 async function archiveSingle(sessionId) {
@@ -1396,19 +1437,19 @@ if (_isTauri && window.__TAURI__.event) {
     document.getElementById('showArchived').checked = e.payload;
     fetchSessions(e.payload);
   });
+  listen('menu-zoom', (e) => {
+    if (e.payload === 'in') { zoomLevel = Math.min(200, zoomLevel + 10); }
+    else if (e.payload === 'out') { zoomLevel = Math.max(60, zoomLevel - 10); }
+    else { zoomLevel = 100; }
+    localStorage.setItem('csm-zoom', zoomLevel); applyZoom();
+  });
 }
 
-// --- Zoom (Cmd+/Cmd-) ---
+// --- Zoom ---
 let zoomLevel = parseFloat(localStorage.getItem('csm-zoom') || '100');
 function applyZoom() {
   document.getElementById('detailPane').style.fontSize = zoomLevel + '%';
 }
-document.addEventListener('keydown', (e) => {
-  if (!(e.metaKey || e.ctrlKey)) return;
-  if (e.key === '=' || e.key === '+') { e.preventDefault(); zoomLevel = Math.min(200, zoomLevel + 10); localStorage.setItem('csm-zoom', zoomLevel); applyZoom(); }
-  else if (e.key === '-') { e.preventDefault(); zoomLevel = Math.max(60, zoomLevel - 10); localStorage.setItem('csm-zoom', zoomLevel); applyZoom(); }
-  else if (e.key === '0') { e.preventDefault(); zoomLevel = 100; localStorage.setItem('csm-zoom', zoomLevel); applyZoom(); }
-});
 
 // --- Keyboard navigation ---
 let focusPane = 'left'; // 'left' or 'right'

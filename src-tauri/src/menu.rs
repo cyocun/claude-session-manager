@@ -104,13 +104,24 @@ pub fn setup_menu(app: &AppHandle) -> tauri::Result<()> {
         .undo().redo().separator().cut().copy().paste().select_all()
         .build()?;
 
+    // View menu (zoom)
+    let zoom_in = tauri::menu::MenuItemBuilder::with_id("zoom:in", "Zoom In")
+        .accelerator("CmdOrCtrl+=").build(app)?;
+    let zoom_out = tauri::menu::MenuItemBuilder::with_id("zoom:out", "Zoom Out")
+        .accelerator("CmdOrCtrl+-").build(app)?;
+    let zoom_reset = tauri::menu::MenuItemBuilder::with_id("zoom:reset", "Actual Size")
+        .accelerator("CmdOrCtrl+0").build(app)?;
+    let view_sub = SubmenuBuilder::with_id(app, "view_sub", "View")
+        .item(&zoom_in).item(&zoom_out).item(&zoom_reset)
+        .build()?;
+
     // Window menu
     let window_sub = SubmenuBuilder::with_id(app, "window_sub", "Window")
         .minimize().separator().close_window()
         .build()?;
 
     let menu = MenuBuilder::new(app)
-        .item(&app_sub).item(&edit_sub).item(&window_sub)
+        .item(&app_sub).item(&edit_sub).item(&view_sub).item(&window_sub)
         .build()?;
 
     app.set_menu(menu)?;
@@ -143,6 +154,9 @@ pub fn setup_menu(app: &AppHandle) -> tauri::Result<()> {
         } else if id == "toggle:archived" {
             let checked = get_check_item(app_handle, "toggle:archived").unwrap_or(false);
             let _ = app_handle.emit("menu-show-archived", checked);
+        } else if id.starts_with("zoom:") {
+            let action = id.strip_prefix("zoom:").unwrap_or("reset").to_string();
+            let _ = app_handle.emit("menu-zoom", &action);
         }
     });
 

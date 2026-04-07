@@ -75,8 +75,8 @@ pub fn list_sessions(include_archived: bool) -> Vec<SessionSummary> {
     let mut total_lines = 0;
     for line in BufReader::new(file).lines().flatten() {
         total_lines += 1;
-        let entry: HistoryEntry = match serde_json::from_str(&line) {
-            Ok(e) => e,
+        let entry: HistoryEntry = match serde_json::from_str::<crate::models::RawHistoryEntry>(&line) {
+            Ok(raw) => raw.into(),
             Err(e) => {
                 if parse_errors == 0 {
                     eprintln!("JSONL parse error on line {}: {} | line: {}", total_lines, e, &line[..line.len().min(100)]);
