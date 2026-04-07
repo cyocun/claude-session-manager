@@ -290,7 +290,7 @@
 
     .session-preview {
       position: fixed; z-index: 200; pointer-events: auto;
-      width: 400px; max-height: 90vh; overflow: visible;
+      width: 400px; max-width: 50vw; max-height: 90vh; overflow: visible;
       background: var(--modal-bg); border: 1px solid var(--modal-border);
       border-radius: 10px;
       box-shadow: 0 12px 40px rgba(0,0,0,0.2);
@@ -867,8 +867,11 @@ async function showDetail(sessionId) {
   const headerEl = document.getElementById('detailHeader');
   const messagesEl = document.getElementById('detailMessages');
 
-  // Switch to 3-column layout
+  // Switch to 3-column layout & enforce wider min width
   document.body.style.gridTemplateColumns = '300px 1px 1fr';
+  if (_isTauri) {
+    window.__TAURI__.window.getCurrentWindow().setMinSize(new window.__TAURI__.window.LogicalSize(700, 500));
+  }
   document.getElementById('resizeHandle').style.display = '';
   pane.style.display = 'grid';
 
@@ -1068,7 +1071,8 @@ function positionPreview() {
   if (!previewAnchorRect) return;
   const listPane = document.getElementById('sessionListPane');
   const x = listPane.getBoundingClientRect().right + 12;
-  previewEl.style.left = Math.max(10, Math.min(x, window.innerWidth - 420)) + 'px';
+  previewEl.style.right = '10px';
+  previewEl.style.left = 'auto';
   // Temporarily position off-screen to measure actual height
   previewEl.style.top = '0px';
   previewEl.style.visibility = 'hidden';
@@ -1619,7 +1623,7 @@ if (_isTauri && window.__TAURI__.event) {
 // --- Zoom ---
 let zoomLevel = parseFloat(localStorage.getItem('csm-zoom') || '100');
 function applyZoom() {
-  document.getElementById('detailPane').style.fontSize = zoomLevel + '%';
+  document.getElementById('detailPane').style.zoom = (zoomLevel / 100);
 }
 
 // --- Keyboard navigation ---
