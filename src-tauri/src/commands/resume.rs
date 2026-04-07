@@ -219,6 +219,32 @@ pub fn start_new_session_in_project(project: String) -> ResumeResult {
 }
 
 #[tauri::command]
+pub fn open_usage_stats() -> ResumeResult {
+    let settings = super::settings::get_settings();
+    let terminal_app = normalize_terminal_app(&settings.terminal_app);
+    let home = dirs::home_dir().unwrap_or_default().to_string_lossy().to_string();
+    let cmd = format!(
+        "cd '{}' && claude && /usage",
+        shell_single_quote_escape(&home)
+    );
+
+    match launch_in_terminal(terminal_app, &cmd) {
+        Ok(method) => ResumeResult {
+            ok: true,
+            method,
+            pid: None,
+            error: None,
+        },
+        Err(e) => ResumeResult {
+            ok: false,
+            method: String::new(),
+            pid: None,
+            error: Some(e),
+        },
+    }
+}
+
+#[tauri::command]
 pub fn resume_session(session_id: String) -> ResumeResult {
     let project = match find_project_for_session(&session_id) {
         Some(p) => p,

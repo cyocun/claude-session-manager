@@ -1,6 +1,156 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+fn extract_tag_value(text: &str, tag: &str) -> Option<String> {
+    let open = format!("<{}>", tag);
+    let close = format!("</{}>", tag);
+    let start = text.find(&open)? + open.len();
+    let end = text[start..].find(&close)?;
+    Some(text[start..start + end].to_string())
+}
+
+fn strip_tag_block(mut text: String, tag: &str) -> String {
+    let open = format!("<{}>", tag);
+    let close = format!("</{}>", tag);
+    while let Some(start) = text.find(&open) {
+        if let Some(end_rel) = text[start..].find(&close) {
+            let end = start + end_rel + close.len();
+            text.replace_range(start..end, "");
+        } else {
+            break;
+        }
+    }
+    text
+}
+
+fn format_command_with_result(command: &str, stdout: &str, stderr: &str) -> String {
+    let cmd = command.trim();
+    let out = stdout.trim();
+    let err = stderr.trim();
+    if cmd.is_empty() {
+        if !out.is_empty() && !err.is_empty() {
+            return format!("{}\n\n[stderr]\n{}", out, err);
+        }
+        if !out.is_empty() {
+            return out.to_string();
+        }
+        if !err.is_empty() {
+            return format!("[stderr]\n{}", err);
+        }
+        return String::new();
+    }
+
+    let mut parts = vec![format!("$ {}", cmd)];
+    if !out.is_empty() {
+        parts.push(out.to_string());
+    }
+    if !err.is_empty() {
+        parts.push(format!("[stderr]\n{}", err));
+    }
+    parts.join("\n\n")
+}
+
+pub fn normalize_message_text(raw: &str) -> String {
+    let text = raw.trim();
+    if text.is_empty() {
+        return String::new();
+    }
+
+    let bash_input = extract_tag_value(text, "bash-input")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let bash_stdout = extract_tag_value(text, "bash-stdout")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let bash_stderr = extract_tag_value(text, "bash-stderr")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if !bash_input.is_empty() || !bash_stdout.is_empty() || !bash_stderr.is_empty() {
+        let formatted = format_command_with_result(&bash_input, &bash_stdout, &bash_stderr);
+        if !formatted.is_empty() {
+            return formatted;
+        }
+    }
+
+    let has_local_command_tags = text.contains("<command-name>")
+        || text.contains("<command-message>")
+        || text.contains("<command-args>")
+        || text.contains("<local-command-caveat>");
+
+    if has_local_command_tags {
+        let command_name = extract_tag_value(text, "command-name")
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let command_message = extract_tag_value(text, "command-message")
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let command_args = extract_tag_value(text, "command-args")
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+
+        let mut command = if !command_name.is_empty() {
+            command_name.clone()
+        } else {
+            command_message.clone()
+        };
+
+        if command.is_empty() {
+            command = command_message.clone();
+        }
+        if command.is_empty() {
+            command = command_name.clone();
+        }
+
+        if !command.starts_with('/') && !command.starts_with('!') {
+            if command_message.starts_with('/') || command_message.starts_with('!') {
+                command = command_message.clone();
+            } else if command_name.starts_with('/') || command_name.starts_with('!') {
+                command = command_name.clone();
+            } else if !command.is_empty() {
+                command = format!("/{}", command);
+            }
+        }
+
+        if !command_args.is_empty() {
+            if command.is_empty() {
+                command = command_args;
+            } else {
+                command.push(' ');
+                command.push_str(&command_args);
+            }
+        }
+
+        if !command.is_empty() {
+            return command;
+        }
+
+        let mut cleaned = text.to_string();
+        for tag in [
+            "local-command-caveat",
+            "command-name",
+            "command-message",
+            "command-args",
+            "bash-input",
+            "bash-stdout",
+            "bash-stderr",
+            "current_datetime",
+            "reminder",
+            "sql_tables",
+        ] {
+            cleaned = strip_tag_block(cleaned, tag);
+        }
+        return cleaned.trim().to_string();
+    }
+
+    text.to_string()
+}
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct PastedContent {
@@ -52,6 +202,7 @@ impl From<RawHistoryEntry> for HistoryEntry {
                 }
             }
         }
+        display = normalize_message_text(&display);
         HistoryEntry {
             display,
             timestamp: raw.timestamp,
@@ -256,6 +407,7 @@ pub struct TokenSessionRow {
 #[serde(rename_all = "camelCase")]
 pub struct TokenDashboard {
     pub totals: TokenTotals,
+    pub by_hour: Vec<TokenTimePoint>,
     pub by_project: Vec<TokenProjectRow>,
     pub by_day: Vec<TokenTimePoint>,
     pub by_week: Vec<TokenTimePoint>,

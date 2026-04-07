@@ -12,7 +12,7 @@ use tantivy::snippet::SnippetGenerator;
 use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument};
 
 use crate::commands::sessions::{claude_dir, find_session_file};
-use crate::models::{HistoryEntry, RawHistoryEntry, SearchHit, SearchIndexStatus};
+use crate::models::{normalize_message_text, HistoryEntry, RawHistoryEntry, SearchHit, SearchIndexStatus};
 
 const MAX_CONTENT_BYTES: usize = 50 * 1024; // 50KB per document
 const WRITER_HEAP_SIZE: usize = 50 * 1024 * 1024; // 50MB
@@ -195,12 +195,12 @@ impl SearchIndex {
 
             match content_val {
                 Value::String(s) => {
-                    text_parts.push(s.clone());
+                    text_parts.push(normalize_message_text(s));
                 }
                 Value::Array(blocks) => {
                     for block in blocks {
                         match block {
-                            Value::String(s) => text_parts.push(s.clone()),
+                            Value::String(s) => text_parts.push(normalize_message_text(s)),
                             Value::Object(_) => {
                                 if let Some(btype) = block.get("type").and_then(|v| v.as_str()) {
                                     // Only index user/assistant text, skip tool_use and tool_result
@@ -208,7 +208,7 @@ impl SearchIndex {
                                         if let Some(t) =
                                             block.get("text").and_then(|v| v.as_str())
                                         {
-                                            text_parts.push(t.to_string());
+                                            text_parts.push(normalize_message_text(t));
                                         }
                                     }
                                 }

@@ -167,7 +167,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
     .md-content p { margin: 0.3em 0; }
     .md-content p:first-child { margin-top: 0; }
     .md-content p:last-child { margin-bottom: 0; }
-    .md-content pre { background: var(--code-bg); border: 1px solid var(--code-border); border-radius: 6px; padding: 0.6em 0.8em; margin: 0.4em 0; overflow-x: auto; font-size: 0.8em; }
+    .md-content pre { background: var(--code-bg); border: 1px solid var(--code-border); border-radius: 6px; padding: 0.6em 0.8em; margin: 0.4em 0; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; font-size: 0.8em; }
     .bubble-user .md-content pre { background: var(--code-bg-user); border-color: var(--code-border-user); }
     .md-content code { font-family: 'SF Mono', Menlo, monospace; font-size: 0.9em; }
     .md-content :not(pre) > code { background: var(--inline-code-bg); padding: 0.15em 0.35em; border-radius: 3px; }
@@ -184,7 +184,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
     .bubble-user .md-content h2 { border-bottom-color: rgba(255,255,255,0.2); }
     .bubble-user .md-content h3, .bubble-user .md-content h4 { color: inherit; }
     .md-content blockquote { border-left: 2px solid var(--blockquote-border); padding-left: 0.8em; margin: 0.3em 0; color: var(--blockquote-color); }
-    .md-content table { border-collapse: collapse; margin: 0.6em 0 1em; font-size: 0.85em; width: auto; border: 1px solid var(--table-border); border-radius: 4px; }
+    .md-content table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0.6em 0 1em; font-size: 0.85em; width: max-content; min-width: 100%; border: 1px solid var(--table-border); border-radius: 4px; }
     .md-content th, .md-content td { border: 1px solid var(--table-border); padding: 0.4em 0.8em; }
     .md-content th { background: var(--border); font-weight: 600; color: var(--text); }
     .md-content tr:nth-child(even) td { background: var(--table-th-bg); }

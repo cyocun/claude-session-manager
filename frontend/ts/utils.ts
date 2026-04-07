@@ -13,28 +13,6 @@ export function isRemoteHost(hostname: string): boolean {
   return hostname !== 'localhost' && hostname !== '127.0.0.1';
 }
 
-export async function copyText(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return;
-    } catch {
-      // fall through to fallback
-    }
-  }
-  copyTextFallback(text);
-}
-
-function copyTextFallback(text: string): void {
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.cssText = 'position:fixed;left:-9999px';
-  document.body.appendChild(ta);
-  ta.select();
-  document.execCommand('copy');
-  document.body.removeChild(ta);
-}
-
 export function timeAgo(ts: number | null | undefined, lang: string, t: (key: string) => string): string {
   if (!ts) return '';
   const now = new Date();

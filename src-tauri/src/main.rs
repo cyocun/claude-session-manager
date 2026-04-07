@@ -7,7 +7,7 @@ mod models;
 mod search;
 mod tray;
 
-use commands::{archive, projects, resume, search as search_cmd, sessions, settings};
+use commands::{archive, clipboard, projects, resume, search as search_cmd, sessions, settings};
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
@@ -58,9 +58,11 @@ fn main() {
             archive::archive_sessions,
             settings::get_settings,
             settings::update_settings,
+            clipboard::copy_to_clipboard,
             resume::resume_session,
             resume::start_new_session,
             resume::start_new_session_in_project,
+            resume::open_usage_stats,
             resume::get_resume_command,
             resume::get_session_status,
             search_cmd::search_sessions,

@@ -296,6 +296,12 @@ fn day_label(ts_millis: u64) -> String {
     dt.format("%Y-%m-%d").to_string()
 }
 
+fn hour_label(ts_millis: u64) -> String {
+    let dt = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ts_millis as i64)
+        .unwrap_or(chrono::DateTime::<chrono::Utc>::UNIX_EPOCH);
+    dt.format("%Y-%m-%d %H:00").to_string()
+}
+
 fn month_label(ts_millis: u64) -> String {
     let dt = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ts_millis as i64)
         .unwrap_or(chrono::DateTime::<chrono::Utc>::UNIX_EPOCH);
@@ -312,6 +318,27 @@ fn estimate_cost_usd(input: u64, output: u64, cache_creation: u64, cache_read: u
         + (output as f64 * output_rate)
         + (cache_creation as f64 * cache_create_rate)
         + (cache_read as f64 * cache_read_rate)
+}
+
+fn accumulate_time_point(
+    map: &mut HashMap<String, TokenTimePoint>,
+    label: String,
+    input: u64,
+    output: u64,
+    total: u64,
+    cost: f64,
+) {
+    let entry = map.entry(label.clone()).or_insert(TokenTimePoint {
+        label,
+        input_tokens: 0,
+        output_tokens: 0,
+        total_tokens: 0,
+        estimated_cost_usd: 0.0,
+    });
+    entry.input_tokens += input;
+    entry.output_tokens += output;
+    entry.total_tokens += total;
+    entry.estimated_cost_usd += cost;
 }
 
 fn classify_decision_kind(text: &str) -> Option<&'static str> {
@@ -337,7 +364,7 @@ fn extract_message_text(v: &serde_json::Value) -> String {
         .and_then(|m| m.get("content"))
         .unwrap_or(&serde_json::Value::Null);
     match content {
-        serde_json::Value::String(s) => s.trim().to_string(),
+        serde_json::Value::String(s) => normalize_message_text(s),
         serde_json::Value::Array(arr) => {
             let mut out = String::new();
             for block in arr {
@@ -351,7 +378,7 @@ fn extract_message_text(v: &serde_json::Value) -> String {
                         if !out.is_empty() {
                             out.push('\n');
                         }
-                        out.push_str(t);
+                        out.push_str(&normalize_message_text(t));
                     }
                 }
             }
@@ -366,6 +393,7 @@ fn compute_token_dashboard() -> Result<TokenDashboard, String> {
     if !projects_dir.exists() {
         return Ok(TokenDashboard {
             totals: TokenTotals::default(),
+            by_hour: vec![],
             by_project: vec![],
             by_day: vec![],
             by_week: vec![],
@@ -375,6 +403,7 @@ fn compute_token_dashboard() -> Result<TokenDashboard, String> {
     }
 
     let mut by_project: HashMap<String, TokenProjectRow> = HashMap::new();
+    let mut by_hour: HashMap<String, TokenTimePoint> = HashMap::new();
     let mut by_day: HashMap<String, TokenTimePoint> = HashMap::new();
     let mut by_week: HashMap<String, TokenTimePoint> = HashMap::new();
     let mut by_month: HashMap<String, TokenTimePoint> = HashMap::new();
@@ -438,44 +467,10 @@ fn compute_token_dashboard() -> Result<TokenDashboard, String> {
             proj_entry.total_tokens += total;
             proj_entry.estimated_cost_usd += cost;
 
-            let day = day_label(ts);
-            let day_entry = by_day.entry(day.clone()).or_insert(TokenTimePoint {
-                label: day,
-                input_tokens: 0,
-                output_tokens: 0,
-                total_tokens: 0,
-                estimated_cost_usd: 0.0,
-            });
-            day_entry.input_tokens += input;
-            day_entry.output_tokens += output;
-            day_entry.total_tokens += total;
-            day_entry.estimated_cost_usd += cost;
-
-            let week = week_label(ts);
-            let week_entry = by_week.entry(week.clone()).or_insert(TokenTimePoint {
-                label: week,
-                input_tokens: 0,
-                output_tokens: 0,
-                total_tokens: 0,
-                estimated_cost_usd: 0.0,
-            });
-            week_entry.input_tokens += input;
-            week_entry.output_tokens += output;
-            week_entry.total_tokens += total;
-            week_entry.estimated_cost_usd += cost;
-
-            let month = month_label(ts);
-            let month_entry = by_month.entry(month.clone()).or_insert(TokenTimePoint {
-                label: month,
-                input_tokens: 0,
-                output_tokens: 0,
-                total_tokens: 0,
-                estimated_cost_usd: 0.0,
-            });
-            month_entry.input_tokens += input;
-            month_entry.output_tokens += output;
-            month_entry.total_tokens += total;
-            month_entry.estimated_cost_usd += cost;
+            accumulate_time_point(&mut by_hour, hour_label(ts), input, output, total, cost);
+            accumulate_time_point(&mut by_day, day_label(ts), input, output, total, cost);
+            accumulate_time_point(&mut by_week, week_label(ts), input, output, total, cost);
+            accumulate_time_point(&mut by_month, month_label(ts), input, output, total, cost);
 
             if !session_id.is_empty() {
                 let sess_entry = by_session.entry(session_id.clone()).or_insert(TokenSessionRow {
@@ -515,6 +510,9 @@ fn compute_token_dashboard() -> Result<TokenDashboard, String> {
     let mut by_project_vec: Vec<TokenProjectRow> = by_project.into_values().collect();
     by_project_vec.sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
 
+    let mut by_hour_vec: Vec<TokenTimePoint> = by_hour.into_values().collect();
+    by_hour_vec.sort_by(|a, b| a.label.cmp(&b.label));
+
     let mut by_day_vec: Vec<TokenTimePoint> = by_day.into_values().collect();
     by_day_vec.sort_by(|a, b| a.label.cmp(&b.label));
 
@@ -530,6 +528,7 @@ fn compute_token_dashboard() -> Result<TokenDashboard, String> {
 
     Ok(TokenDashboard {
         totals,
+        by_hour: by_hour_vec,
         by_project: by_project_vec,
         by_day: by_day_vec,
         by_week: by_week_vec,

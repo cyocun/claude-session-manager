@@ -2,7 +2,7 @@ import { detectLang, translate } from './i18n.js';
 import { createEl } from './dom.js';
 import { getThemePref, applyTheme, watchSystemTheme } from './theme.js';
 import { invoke, isTauri } from './tauri.js';
-import { copyText, isRemoteHost, shortPath, timeAgo } from './utils.js';
+import { isRemoteHost, shortPath, timeAgo } from './utils.js';
 import { getPreviewDetailCached, hidePreview, initPreview, schedulePreviewHide, schedulePreviewShow, setPreviewDetailCached, } from './preview.js';
 import { createChatSearchController } from './chatSearch.js';
 import { createFullTextSearchController } from './fullTextSearch.js';
@@ -108,7 +108,6 @@ const actions = createSessionActions({
     t,
     getLang: () => lang,
     invoke,
-    copyText,
     fetchSessions,
     getShowArchived: () => byId('showArchived').checked,
     getSelectedIds: () => selectedIds,
@@ -160,6 +159,17 @@ function renderProjects() {
         projectNameMap[p.path] = p.name; });
 }
 const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+const TOKEN_LIMIT_KEYS = {
+    input: 'csm-token-limit-input',
+    output: 'csm-token-limit-output',
+    total: 'csm-token-limit-total',
+};
+const TOKEN_TREND_POINT_LIMIT = {
+    hour: 48,
+    day: 30,
+    week: 26,
+    month: 24,
+};
 function isRecentProject(g) {
     return (Date.now() - g.sessions[0].lastTimestamp) < SEVEN_DAYS;
 }
@@ -276,6 +286,15 @@ function mkTokenTable(headers, rows) {
     table.appendChild(tbody);
     return table;
 }
+function tokenTrendPoints(data, period) {
+    if (period === 'hour')
+        return data.byHour.slice(-TOKEN_TREND_POINT_LIMIT.hour);
+    if (period === 'day')
+        return data.byDay.slice(-TOKEN_TREND_POINT_LIMIT.day);
+    if (period === 'week')
+        return data.byWeek.slice(-TOKEN_TREND_POINT_LIMIT.week);
+    return data.byMonth.slice(-TOKEN_TREND_POINT_LIMIT.month);
+}
 async function openTokenModal() {
     closeTokenModal();
     const modal = createEl('div', {
@@ -287,10 +306,11 @@ async function openTokenModal() {
     });
     const title = createEl('div', { className: 'text-sm font-medium truncate', textContent: t('tokenTitle') });
     title.style.color = 'var(--text-secondary)';
+    const usageBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('tokenOpenUsage') });
     const refreshBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('tokenRefresh') });
     const closeBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('tokenClose') });
     const body = createEl('div', { className: 'project-summary-body', textContent: t('loading') });
-    const header = createEl('div', { className: 'project-summary-header' }, [title, createEl('span'), refreshBtn, closeBtn]);
+    const header = createEl('div', { className: 'project-summary-header' }, [title, createEl('span'), usageBtn, refreshBtn, closeBtn]);
     const dialog = createEl('div', { className: 'project-summary-dialog' }, [header, body]);
     modal.appendChild(dialog);
     document.body.appendChild(modal);
@@ -298,6 +318,11 @@ async function openTokenModal() {
     modal.tabIndex = -1;
     modal.focus();
     closeBtn.addEventListener('click', () => closeTokenModal());
+    usageBtn.addEventListener('click', async () => {
+        const result = await invoke('open_usage_stats');
+        if (result && !result.ok)
+            actions.showToast(t('toastError') + (result.error || ''));
+    });
     modal.addEventListener('keydown', (e) => {
         if (e.key === 'Escape')
             closeTokenModal();
@@ -318,9 +343,9 @@ async function openTokenModal() {
             createEl('div', { className: 'token-card' }, [createEl('div', { className: 'token-card-label', textContent: t('tokenEstimatedCost') }), createEl('div', { className: 'token-card-value', textContent: formatUsd(data.totals.estimatedCostUsd) })]),
         ]);
         body.appendChild(grid);
-        const limitInput = parseTokenLimit('csm-token-limit-input');
-        const limitOutput = parseTokenLimit('csm-token-limit-output');
-        const limitTotal = parseTokenLimit('csm-token-limit-total');
+        const limitInput = parseTokenLimit(TOKEN_LIMIT_KEYS.input);
+        const limitOutput = parseTokenLimit(TOKEN_LIMIT_KEYS.output);
+        const limitTotal = parseTokenLimit(TOKEN_LIMIT_KEYS.total);
         body.appendChild(createEl('div', { className: 'token-section-title', textContent: t('tokenLimitUsage') }));
         const mkLimit = (label, used, limit, key) => {
             const pct = limit > 0 ? Math.round((used / limit) * 100) : 0;
@@ -355,26 +380,28 @@ async function openTokenModal() {
             return card;
         };
         body.appendChild(createEl('div', { className: 'token-limit-grid' }, [
-            mkLimit(t('tokenLimitInput'), data.totals.inputTokens, limitInput, 'csm-token-limit-input'),
-            mkLimit(t('tokenLimitOutput'), data.totals.outputTokens, limitOutput, 'csm-token-limit-output'),
-            mkLimit(t('tokenLimitTotal'), data.totals.totalTokens, limitTotal, 'csm-token-limit-total'),
+            mkLimit(t('tokenLimitInput'), data.totals.inputTokens, limitInput, TOKEN_LIMIT_KEYS.input),
+            mkLimit(t('tokenLimitOutput'), data.totals.outputTokens, limitOutput, TOKEN_LIMIT_KEYS.output),
+            mkLimit(t('tokenLimitTotal'), data.totals.totalTokens, limitTotal, TOKEN_LIMIT_KEYS.total),
         ]));
         body.appendChild(createEl('div', { className: 'token-section-title', textContent: t('tokenTrend') }));
         const controls = createEl('div', { className: 'token-controls' });
+        const hourlyBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('tokenPeriodHour') });
         const dailyBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('tokenPeriodDay') });
         const weeklyBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('tokenPeriodWeek') });
         const monthlyBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('tokenPeriodMonth') });
-        controls.append(dailyBtn, weeklyBtn, monthlyBtn);
+        controls.append(hourlyBtn, dailyBtn, weeklyBtn, monthlyBtn);
         body.appendChild(controls);
         const chartWrap = createEl('div', { className: 'token-chart-wrap' });
         const canvas = createEl('canvas', { className: 'token-chart' });
         chartWrap.appendChild(canvas);
         body.appendChild(chartWrap);
-        let currentPoints = data.byDay.slice(-30);
+        let currentPoints = tokenTrendPoints(data, 'day');
         const renderTrend = () => drawTokenTrend(canvas, currentPoints);
-        dailyBtn.addEventListener('click', () => { currentPoints = data.byDay.slice(-30); renderTrend(); });
-        weeklyBtn.addEventListener('click', () => { currentPoints = data.byWeek.slice(-26); renderTrend(); });
-        monthlyBtn.addEventListener('click', () => { currentPoints = data.byMonth.slice(-24); renderTrend(); });
+        hourlyBtn.addEventListener('click', () => { currentPoints = tokenTrendPoints(data, 'hour'); renderTrend(); });
+        dailyBtn.addEventListener('click', () => { currentPoints = tokenTrendPoints(data, 'day'); renderTrend(); });
+        weeklyBtn.addEventListener('click', () => { currentPoints = tokenTrendPoints(data, 'week'); renderTrend(); });
+        monthlyBtn.addEventListener('click', () => { currentPoints = tokenTrendPoints(data, 'month'); renderTrend(); });
         renderTrend();
         body.appendChild(createEl('div', { className: 'token-section-title', textContent: t('tokenProjectCompare') }));
         const maxProjectTokens = Math.max(...data.byProject.slice(0, 12).map(p => p.totalTokens), 1);
@@ -390,6 +417,8 @@ async function openTokenModal() {
         });
         body.appendChild(barList);
         body.appendChild(mkTokenTable(['Project', 'Sessions', t('tokenTotal'), t('tokenEstimatedCost')], data.byProject.slice(0, 20).map(p => [projectDisplayName(p.project), String(p.sessionCount), formatNum(p.totalTokens), formatUsd(p.estimatedCostUsd)])));
+        body.appendChild(createEl('div', { className: 'token-section-title', textContent: t('tokenByHour') }));
+        body.appendChild(mkTokenTable(['Hour', t('tokenInput'), t('tokenOutput'), t('tokenTotal')], data.byHour.slice(-24).map(h => [h.label, formatNum(h.inputTokens), formatNum(h.outputTokens), formatNum(h.totalTokens)])));
         body.appendChild(createEl('div', { className: 'token-section-title', textContent: t('tokenByDay') }));
         body.appendChild(mkTokenTable(['Date', t('tokenInput'), t('tokenOutput'), t('tokenTotal')], data.byDay.slice(-14).map(d => [d.label, formatNum(d.inputTokens), formatNum(d.outputTokens), formatNum(d.totalTokens)])));
         body.appendChild(createEl('div', { className: 'token-section-title', textContent: t('tokenByWeek') }));

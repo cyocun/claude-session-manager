@@ -224,17 +224,17 @@ fn extract_message(msg: &Value) -> Option<Message> {
 
     match content_val {
         Value::String(s) => {
-            text_parts.push(s.clone());
+            text_parts.push(normalize_message_text(s));
         }
         Value::Array(blocks) => {
             for block in blocks {
                 match block {
-                    Value::String(s) => text_parts.push(s.clone()),
+                    Value::String(s) => text_parts.push(normalize_message_text(s)),
                     Value::Object(_) => {
                         if let Some(btype) = block.get("type").and_then(|v| v.as_str()) {
                             if btype == "text" {
                                 if let Some(t) = block.get("text").and_then(|v| v.as_str()) {
-                                    text_parts.push(t.to_string());
+                                    text_parts.push(normalize_message_text(t));
                                 }
                             } else if let Some(tool) = extract_tool_info(block) {
                                 tools.push(tool);

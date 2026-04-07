@@ -1,5 +1,5 @@
 export function createSessionActions(deps) {
-    const { byId, t, getLang, invoke, copyText, fetchSessions, getShowArchived, getSelectedIds, clearSelectedIds, getSessions, } = deps;
+    const { byId, t, getLang, invoke, fetchSessions, getShowArchived, getSelectedIds, clearSelectedIds, getSessions, } = deps;
     function showToast(msg) {
         const el = byId('toast');
         el.textContent = msg;
@@ -24,8 +24,13 @@ export function createSessionActions(deps) {
             showToast(t('toastError'));
             return;
         }
-        await copyText(data.command);
-        showToast(t('toastCopied'));
+        try {
+            await invoke('copy_to_clipboard', { text: data.command });
+            showToast(t('toastCopied'));
+        }
+        catch (e) {
+            showToast(t('toastError') + (e instanceof Error ? e.message : String(e)));
+        }
     }
     async function archiveSingle(sessionId) {
         await invoke('archive_sessions', { sessionIds: [sessionId], archive: true });

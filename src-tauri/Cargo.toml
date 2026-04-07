@@ -15,3 +15,4 @@ dirs = "5"
 tantivy = "0.22"
 tauri-plugin-window-state = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+arboard = "3"

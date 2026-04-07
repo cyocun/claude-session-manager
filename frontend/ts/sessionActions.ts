@@ -10,7 +10,6 @@ export type SessionActionsDeps = {
   t: (key: string) => string;
   getLang: () => string;
   invoke: (cmd: string, args?: Record<string, unknown>) => Promise<any>;
-  copyText: (text: string) => Promise<void>;
   fetchSessions: (includeArchived?: boolean) => Promise<void>;
   getShowArchived: () => boolean;
   getSelectedIds: SelectedIdsAccessor;
@@ -24,7 +23,6 @@ export function createSessionActions(deps: SessionActionsDeps) {
     t,
     getLang,
     invoke,
-    copyText,
     fetchSessions,
     getShowArchived,
     getSelectedIds,
@@ -56,8 +54,12 @@ export function createSessionActions(deps: SessionActionsDeps) {
       showToast(t('toastError'));
       return;
     }
-    await copyText(data.command);
-    showToast(t('toastCopied'));
+    try {
+      await invoke('copy_to_clipboard', { text: data.command });
+      showToast(t('toastCopied'));
+    } catch (e) {
+      showToast(t('toastError') + (e instanceof Error ? e.message : String(e)));
+    }
   }
 
   async function archiveSingle(sessionId: string): Promise<void> {
