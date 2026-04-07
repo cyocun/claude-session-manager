@@ -108,6 +108,63 @@ pub fn get_session_status(session_id: String) -> SessionStatus {
 }
 
 #[tauri::command]
+pub fn start_new_session() -> ResumeResult {
+    let settings = super::settings::get_settings();
+    let terminal_app = &settings.terminal_app;
+    let home = dirs::home_dir().unwrap_or_default().to_string_lossy().to_string();
+    let cmd = format!("cd {} && claude", home);
+
+    let script = match terminal_app.as_str() {
+        "iTerm" => format!(
+            r#"tell application "iTerm"
+                activate
+                tell current window
+                    create tab with default profile
+                    tell current session
+                        write text "{cmd}"
+                    end tell
+                end tell
+            end tell"#
+        ),
+        "Warp" | "Ghostty" => format!(
+            r#"tell application "{app}"
+                activate
+            end tell
+            delay 0.3
+            tell application "System Events"
+                tell process "{app}"
+                    keystroke "t" using command down
+                    delay 0.2
+                    keystroke "{cmd}"
+                    key code 36
+                end tell
+            end tell"#,
+            app = terminal_app
+        ),
+        "tmux" => {
+            return match Command::new("tmux")
+                .args(["new-window", "-n", "claude", &cmd])
+                .spawn()
+            {
+                Ok(_) => ResumeResult { ok: true, method: "tmux".to_string(), pid: None, error: None },
+                Err(e) => ResumeResult { ok: false, method: String::new(), pid: None, error: Some(e.to_string()) },
+            };
+        }
+        _ => format!(
+            r#"tell application "Terminal"
+                activate
+                do script "{cmd}"
+            end tell"#
+        ),
+    };
+
+    match Command::new("osascript").args(["-e", &script]).spawn() {
+        Ok(_) => ResumeResult { ok: true, method: terminal_app.clone(), pid: None, error: None },
+        Err(e) => ResumeResult { ok: false, method: String::new(), pid: None, error: Some(e.to_string()) },
+    }
+}
+
+#[tauri::command]
 pub fn resume_session(session_id: String) -> ResumeResult {
     let project = match find_project_for_session(&session_id) {
         Some(p) => p,
