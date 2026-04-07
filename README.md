@@ -10,10 +10,16 @@ Claude Session Manager is a macOS desktop app for browsing, searching, and resum
 - Session detail view with Markdown/code highlighting and tool block rendering
 - Resume workflow (Terminal / iTerm / Warp / Ghostty / cmux)
 - Token dashboard
-  - totals (input/output/cache/estimated cost)
-  - trends by **hour/day/week/month**
+  - totals (input/output/cache/estimated cost) with animated counters
+  - stacked area chart (Input/Output/Cache Read/Cache Create)
+  - time range filter (1W / 2W / 1M / 3M / 6M / 1Y / All)
+  - model cost breakdown donut chart (Opus / Sonnet / Haiku)
+  - tool usage donut chart (Bash, Read, Edit, etc.)
+  - GitHub-style activity heatmap (past year)
+  - word cloud of user's most frequent words (via macOS NLTokenizer)
   - comparison by project and recent sessions
   - local usage limits
+  - collapsible detail tables (hour/day/week/month/session)
 - Project summary and decision-history view
 - Theme (Light/Dark/System) and language (ja/en)
 
