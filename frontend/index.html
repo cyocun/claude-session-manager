@@ -64,8 +64,8 @@
       color: var(--btn-text);
       box-shadow: 0 0.5px 1px rgba(0,0,0,0.1), 0 0 0 0.5px rgba(0,0,0,0.05);
     }
-    .mac-btn:hover { background: linear-gradient(180deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 100%), var(--btn-bg-hover); }
-    .mac-btn:active { background: var(--btn-bg-hover); box-shadow: inset 0 1px 2px rgba(0,0,0,0.1); }
+    .mac-btn:not(.mac-btn-primary):hover { background: linear-gradient(180deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 100%), var(--btn-bg-hover); }
+    .mac-btn:not(.mac-btn-primary):active { background: var(--btn-bg-hover); box-shadow: inset 0 1px 2px rgba(0,0,0,0.1); }
     .mac-btn-primary {
       background: linear-gradient(180deg, rgba(255,255,255,0.17) 0%, rgba(255,255,255,0) 100%), var(--accent);
       color: #fff; border-color: rgba(0,0,0,0.15);
@@ -77,7 +77,7 @@
       background: linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 100%), var(--btn-bg);
       box-shadow: 0 0.5px 1px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.05);
     }
-    .dark .mac-btn:hover { background: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 100%), var(--btn-bg-hover); }
+    .dark .mac-btn:not(.mac-btn-primary):hover { background: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 100%), var(--btn-bg-hover); }
     .dark .mac-btn-primary {
       background: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 100%), var(--accent);
       box-shadow: 0 0.5px 1px rgba(0,0,0,0.3);
@@ -203,8 +203,8 @@
     body { background: var(--bg); color: var(--text); }
     .scrollbar-thin::-webkit-scrollbar-thumb { background: var(--scrollbar); }
 
-    .bubble-user { background: var(--bubble-user-bg); color: var(--bubble-user-text); border: none; border-radius: 18px 18px 4px 18px; max-width: 80%; margin-left: auto; }
-    .bubble-assistant { background: var(--bubble-ai-bg); color: var(--bubble-ai-text); border: none; border-radius: 12px; max-width: 100%; }
+    .bubble-user { background: var(--bubble-user-bg); color: var(--bubble-user-text); border: none; border-radius: 18px 18px 4px 18px; max-width: 80%; margin-left: auto; min-width: 0; }
+    .bubble-assistant { background: var(--bubble-ai-bg); color: var(--bubble-ai-text); border: none; border-radius: 12px; min-width: 0; }
 
     .md-content p { margin: 0.3em 0; }
     .md-content p:first-child { margin-top: 0; }
@@ -238,7 +238,7 @@
     mark.chat-hit { background: var(--hit-bg); color: var(--text); border-radius: 2px; padding: 0 1px; }
     mark.chat-hit-active { background: var(--hit-active-bg); color: var(--hit-active-text); }
 
-    .tool-block { background: var(--bg-surface); border: 0.5px solid var(--border); border-radius: 6px; margin: 6px 0; font-size: 0.8rem; box-shadow: 0 0.5px 2px rgba(0,0,0,0.04); }
+    .tool-block { background: var(--bg-surface); border: 0.5px solid var(--border); border-radius: 6px; margin: 6px 0; font-size: 0.8rem; box-shadow: 0 0.5px 2px rgba(0,0,0,0.04); min-width: 0; }
     .dark .tool-block { box-shadow: 0 0.5px 2px rgba(0,0,0,0.15); }
     /* diff2html overrides */
     .tool-body .d2h-wrapper { font-size: 11px; }
@@ -256,13 +256,13 @@
     .dark .d2h-code-linenumber { background: var(--code-bg); color: var(--text-muted); border-color: var(--code-border); }
     .dark .d2h-file-diff .d2h-diff-table { border-color: var(--code-border); }
     .dark .d2h-emptyplaceholder { background: var(--code-bg); border-color: var(--code-border); }
-    .tool-header { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 6px; padding: 6px 8px; cursor: pointer; user-select: none; min-height: 28px; }
+    .tool-header { display: grid; grid-template-columns: auto auto auto 1fr; align-items: center; gap: 6px; padding: 6px 8px; cursor: default; user-select: none; min-height: 28px; }
     .tool-header:hover { background: var(--item-hover); }
     .tool-label { font-weight: 600; color: var(--text-secondary); font-family: 'SF Mono', Menlo, monospace; }
     .tool-desc { color: var(--text-muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tool-chevron { color: var(--text-muted); font-size: 10px; flex-shrink: 0; transition: transform 0.15s; }
     .tool-chevron.open { transform: rotate(90deg); }
-    .tool-body { display: none; padding: 6px 8px; border-top: 1px solid var(--code-border); }
+    .tool-body { display: none; padding: 6px 8px; border-top: 1px solid var(--code-border); overflow-x: auto; }
     .tool-body.open { display: block; }
     .tool-body pre { margin: 0; white-space: pre-wrap; word-break: break-all; font-family: 'SF Mono', Menlo, monospace; font-size: 0.8em; color: var(--text); background: transparent !important; padding: 0 !important; }
     .tool-body pre code.hljs { background: transparent !important; padding: 0 !important; }
@@ -271,18 +271,18 @@
     .project-group { margin-bottom: 4px; border-top: 1px solid var(--border); padding-top: 6px; }
     .project-group:first-child { border-top: none; padding-top: 0; }
     .project-group-header {
-      display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 6px; padding: 8px 8px; cursor: pointer;
+      display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 6px; padding: 8px 8px; cursor: default;
       user-select: none; border-radius: 6px; transition: background 0.1s;
     }
     .project-group-header:hover { background: var(--item-hover); }
-    .project-group-icon { font-size: 13px; flex-shrink: 0; }
+    .project-group-icon { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--text-muted); }
     .project-group-chevron { font-size: 9px; color: var(--text-muted); transition: transform 0.15s; flex-shrink: 0; width: 12px; text-align: center; }
     .project-group-chevron.open { transform: rotate(90deg); }
     .project-group-sessions { display: none; padding-left: 4px; }
     .project-group-sessions.open { display: block; }
     .show-older-pill {
       display: block; margin: 6px auto; padding: 3px 14px; border-radius: 999px;
-      font-size: 11px; cursor: pointer; transition: background 0.1s;
+      font-size: 11px; cursor: default; transition: background 0.1s;
       background: var(--btn-bg); color: var(--text-muted); border: 1px solid var(--border);
     }
     .show-older-pill:hover { background: var(--btn-bg-hover); }
@@ -363,7 +363,7 @@
   <div id="detailPane" style="display:none;grid-template-rows:38px auto 1fr auto;min-width:0;height:100vh;overflow:hidden;">
     <div data-tauri-drag-region class="titlebar-drag" style="background:var(--bg-surface);"></div>
     <div id="detailHeader" class="px-4 pb-2" style="display:grid;grid-template-rows:auto auto;gap:6px;border-bottom:0.5px solid var(--border);background:var(--bg-surface);"></div>
-    <div id="detailMessages" class="overflow-y-auto scrollbar-thin px-4 py-4" style="background:var(--bg-chat);display:grid;place-items:center;min-height:0;">
+    <div id="detailMessages" class="overflow-y-auto scrollbar-thin px-4 py-4" style="background:var(--bg-chat);display:grid;place-items:center;min-height:0;overflow-x:hidden;">
       <p id="emptyState" class="text-sm" style="color:var(--text-faint);" data-i18n="selectSession"></p>
     </div>
     <!-- Footer with action buttons -->
@@ -660,7 +660,7 @@ function renderSessionItem(s) {
   const isActive = selectedSession === s.sessionId;
   const defaultBg = updated ? 'var(--updated-bg)' : 'transparent';
   const item = createEl('div', {
-    className: 'session-item p-3 rounded cursor-pointer transition border overflow-hidden',
+    className: 'session-item p-3 rounded cursor-default transition border overflow-hidden',
     'data-id': s.sessionId,
     onClick: (e) => {
       if (e.target.tagName === 'INPUT') return;
@@ -756,8 +756,9 @@ function renderSessions() {
     const count = createEl('span', { className: 'text-[10px] flex-shrink-0', textContent: g.sessions.length + '' });
     count.style.color = 'var(--text-muted)';
 
-    const icon = createEl('span', { className: 'project-group-icon', textContent: '\uD83D\uDCE6' });
-    const header = createEl('div', { className: 'project-group-header' }, [icon, chevron, name, count]);
+    const icon = createEl('span', { className: 'project-group-icon' });
+    icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5A1.5 1.5 0 013.5 3H6l1.5 2h5A1.5 1.5 0 0114 6.5v5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5z"/></svg>';
+    const header = createEl('div', { className: 'project-group-header' }, [chevron, icon, name, count]);
     if (projectNameMap[g.path]) header.title = shortPath(g.path);
 
     // Split sessions into recent (7 days) and older
@@ -908,12 +909,12 @@ async function showDetail(sessionId) {
   const footerEl = document.getElementById('detailFooter');
   const sessionUpdated = isUpdatedSession(sessions.find(s => s.sessionId === sessionId) || {});
   const resumeOpenBtn = mkBtn(
-    '▶ ' + (isRemote() ? t('resumeCopy') : t('resumeTerminal')),
+    isRemote() ? t('resumeCopy') : 'Resume (' + (serverSettings.terminalApp || 'Terminal') + ')',
     sessionUpdated || true,
     () => isRemote() ? copyResume(sessionId) : resumeInTerminal(sessionId),
   );
-  const resumeCopyBtn = mkBtn('📋 ' + t('copyCmd'), false, () => copyResume(sessionId));
-  const archiveBtn = mkBtn('📥 ' + t('archive'), false, () => archiveSingle(sessionId));
+  const resumeCopyBtn = mkBtn(t('copyCmd'), false, () => copyResume(sessionId));
+  const archiveBtn = mkBtn(t('archive'), false, () => archiveSingle(sessionId));
   footerEl.replaceChildren(resumeOpenBtn, resumeCopyBtn, archiveBtn);
 
   // Chat messages — lazy rendering with IntersectionObserver
@@ -1072,6 +1073,27 @@ function hidePreview() {
   if (previewEl) previewEl.classList.add('hidden');
 }
 
+// --- Tool icons (inline SVG, 14x14, stroke-based) ---
+const TOOL_ICONS = {
+  Bash: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2" width="13" height="12" rx="2"/><path d="M4.5 6l2.5 2-2.5 2"/><path d="M8.5 10h3"/></svg>',
+  Edit: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2.5l2.5 2.5L5.5 13H3v-2.5L11 2.5z"/></svg>',
+  Write: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2H4.5A1.5 1.5 0 003 3.5v9A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V7"/><path d="M12 2v4h-4"/><path d="M12 2L8 6"/></svg>',
+  Read: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2H4.5A1.5 1.5 0 003 3.5v9A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V7L9 2z"/><path d="M9 2v5h4"/></svg>',
+  Glob: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 2H3.5A1.5 1.5 0 002 3.5v9A1.5 1.5 0 003.5 14h9a1.5 1.5 0 001.5-1.5V6.5L10 2H6.5z"/><path d="M6.5 2v3h-3"/></svg>',
+  Grep: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>',
+  Agent: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5.5" r="3"/><path d="M2.5 14c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/></svg>',
+  WebSearch: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M2 8h12"/><ellipse cx="8" cy="8" rx="3" ry="6"/></svg>',
+  WebFetch: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v7"/><path d="M5 7l3 3 3-3"/><path d="M3 12h10"/></svg>',
+};
+const TOOL_ICON_DEFAULT = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2L6 6.5l4 3-3.5 4.5"/></svg>';
+
+function toolIcon(name) {
+  const span = document.createElement('span');
+  span.style.cssText = 'display:inline-flex;align-items:center;flex-shrink:0;color:var(--text-muted);';
+  span.innerHTML = TOOL_ICONS[name] || TOOL_ICON_DEFAULT;
+  return span;
+}
+
 // --- Tool rendering ---
 
 function guessLang(filePath) {
@@ -1153,10 +1175,11 @@ function renderToolBlocks(tools, externalResultMap) {
     }
 
     // Header
+    const icon = toolIcon(tool.name);
     const chevron = createEl('span', { className: 'tool-chevron', textContent: '\u25B6' });
     const label = createEl('span', { className: 'tool-label', textContent: tool.name });
     const desc = createEl('span', { className: 'tool-desc', textContent: summary });
-    const header = createEl('div', { className: 'tool-header' }, [chevron, label, desc]);
+    const header = createEl('div', { className: 'tool-header' }, [chevron, icon, label, desc]);
 
     // Body
     const body = document.createElement('div');
@@ -1363,6 +1386,7 @@ if (_isTauri && window.__TAURI__.event) {
     themePref = e.payload; localStorage.setItem('csm-theme', themePref); applyTheme();
   });
   listen('menu-terminal', (e) => {
+    serverSettings.terminalApp = e.payload;
     invoke('update_settings', { terminalApp: e.payload });
   });
   listen('menu-lang', (e) => {
@@ -1384,6 +1408,78 @@ document.addEventListener('keydown', (e) => {
   if (e.key === '=' || e.key === '+') { e.preventDefault(); zoomLevel = Math.min(200, zoomLevel + 10); localStorage.setItem('csm-zoom', zoomLevel); applyZoom(); }
   else if (e.key === '-') { e.preventDefault(); zoomLevel = Math.max(60, zoomLevel - 10); localStorage.setItem('csm-zoom', zoomLevel); applyZoom(); }
   else if (e.key === '0') { e.preventDefault(); zoomLevel = 100; localStorage.setItem('csm-zoom', zoomLevel); applyZoom(); }
+});
+
+// --- Keyboard navigation ---
+let focusPane = 'left'; // 'left' or 'right'
+let focusedBubbleIdx = -1;
+
+document.getElementById('sessionListPane').addEventListener('click', () => { focusPane = 'left'; clearBubbleFocus(); });
+document.getElementById('detailPane').addEventListener('click', () => { if (selectedSession) focusPane = 'right'; });
+
+function clearBubbleFocus() {
+  const prev = document.querySelector('.bubble-focused');
+  if (prev) { prev.classList.remove('bubble-focused'); prev.style.outline = ''; }
+  focusedBubbleIdx = -1;
+}
+
+function getBubbles() {
+  return Array.from(document.querySelectorAll('#detailMessages .bubble-user, #detailMessages .bubble-assistant'));
+}
+
+function focusBubble(idx) {
+  const bubbles = getBubbles();
+  if (bubbles.length === 0) return;
+  clearBubbleFocus();
+  focusedBubbleIdx = Math.max(0, Math.min(idx, bubbles.length - 1));
+  const b = bubbles[focusedBubbleIdx];
+  b.classList.add('bubble-focused');
+  b.style.outline = '2px solid var(--accent)';
+  b.style.outlineOffset = '2px';
+  b.style.borderRadius && (b.style.outlineOffset = '2px');
+  b.scrollIntoView({ block: 'nearest' });
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const active = document.activeElement;
+  if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (focusPane === 'right' && selectedSession) {
+      const bubbles = getBubbles();
+      if (bubbles.length === 0) return;
+      if (e.key === 'ArrowDown') {
+        focusBubble(focusedBubbleIdx < 0 ? 0 : focusedBubbleIdx + 1);
+      } else {
+        focusBubble(focusedBubbleIdx < 0 ? bubbles.length - 1 : focusedBubbleIdx - 1);
+      }
+    } else {
+      const items = Array.from(document.querySelectorAll('.session-item'));
+      if (items.length === 0) return;
+      const currentIdx = items.findIndex(el => el.dataset.id === selectedSession);
+      let nextIdx;
+      if (e.key === 'ArrowDown') {
+        nextIdx = currentIdx < 0 ? 0 : Math.min(currentIdx + 1, items.length - 1);
+      } else {
+        nextIdx = currentIdx < 0 ? 0 : Math.max(currentIdx - 1, 0);
+      }
+      items[nextIdx].click();
+      items[nextIdx].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  // Tab to switch panes
+  if (e.key === 'Tab' && selectedSession) {
+    e.preventDefault();
+    if (focusPane === 'left') {
+      focusPane = 'right';
+    } else {
+      focusPane = 'left';
+      clearBubbleFocus();
+    }
+  }
 });
 
 applyTheme();

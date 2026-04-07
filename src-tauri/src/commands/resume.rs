@@ -126,7 +126,7 @@ pub fn start_new_session() -> ResumeResult {
                 end tell
             end tell"#
         ),
-        "Warp" | "Ghostty" => format!(
+        "Warp" | "Ghostty" | "cmux" => format!(
             r#"tell application "{app}"
                 activate
             end tell
@@ -141,15 +141,6 @@ pub fn start_new_session() -> ResumeResult {
             end tell"#,
             app = terminal_app
         ),
-        "tmux" => {
-            return match Command::new("tmux")
-                .args(["new-window", "-n", "claude", &cmd])
-                .spawn()
-            {
-                Ok(_) => ResumeResult { ok: true, method: "tmux".to_string(), pid: None, error: None },
-                Err(e) => ResumeResult { ok: false, method: String::new(), pid: None, error: Some(e.to_string()) },
-            };
-        }
         _ => format!(
             r#"tell application "Terminal"
                 activate
@@ -206,7 +197,7 @@ pub fn resume_session(session_id: String) -> ResumeResult {
                 end tell
             end tell"#
         ),
-        "Warp" | "Ghostty" => format!(
+        "Warp" | "Ghostty" | "cmux" => format!(
             r#"tell application "{app}"
                 activate
             end tell
@@ -221,15 +212,6 @@ pub fn resume_session(session_id: String) -> ResumeResult {
             end tell"#,
             app = terminal_app
         ),
-        "tmux" => {
-            return match Command::new("tmux")
-                .args(["new-window", "-n", "claude", &cmd])
-                .spawn()
-            {
-                Ok(_) => ResumeResult { ok: true, method: "tmux".to_string(), pid: None, error: None },
-                Err(e) => ResumeResult { ok: false, method: String::new(), pid: None, error: Some(e.to_string()) },
-            };
-        }
         _ => format!(
             r#"tell application "Terminal"
                 activate

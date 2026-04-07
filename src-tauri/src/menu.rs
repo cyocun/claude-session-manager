@@ -1,12 +1,33 @@
 use tauri::menu::{
-    CheckMenuItemBuilder, MenuBuilder, SubmenuBuilder,
+    CheckMenuItemBuilder, MenuBuilder, MenuItemKind, SubmenuBuilder,
 };
 use tauri::{AppHandle, Emitter};
 
+fn find_check_item(items: &[MenuItemKind<tauri::Wry>], id: &str) -> Option<tauri::menu::CheckMenuItem<tauri::Wry>> {
+    for item in items {
+        match item {
+            MenuItemKind::Check(c) => {
+                if c.id().as_ref() == id {
+                    return Some(c.clone());
+                }
+            }
+            MenuItemKind::Submenu(sub) => {
+                if let Ok(sub_items) = sub.items() {
+                    if let Some(found) = find_check_item(&sub_items, id) {
+                        return Some(found);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 fn set_check_item(app: &AppHandle, id: &str, checked: bool) {
     if let Some(menu) = app.menu() {
-        if let Some(kind) = menu.get(id) {
-            if let Some(item) = kind.as_check_menuitem() {
+        if let Ok(items) = menu.items() {
+            if let Some(item) = find_check_item(&items, id) {
                 let _ = item.set_checked(checked);
             }
         }
@@ -15,8 +36,8 @@ fn set_check_item(app: &AppHandle, id: &str, checked: bool) {
 
 fn get_check_item(app: &AppHandle, id: &str) -> Option<bool> {
     let menu = app.menu()?;
-    let kind = menu.get(id)?;
-    let item = kind.as_check_menuitem()?;
+    let items = menu.items().ok()?;
+    let item = find_check_item(&items, id)?;
     item.is_checked().ok()
 }
 
@@ -38,7 +59,7 @@ pub fn setup_menu(app: &AppHandle) -> tauri::Result<()> {
         ("terminal:Terminal", "Terminal.app"),
         ("terminal:iTerm", "iTerm2"),
         ("terminal:Warp", "Warp"),
-        ("terminal:tmux", "tmux"),
+        ("terminal:cmux", "cmux"),
         ("terminal:Ghostty", "Ghostty"),
     ];
 
@@ -135,7 +156,7 @@ pub fn sync_menu_state(app: &AppHandle, theme: &str, terminal: &str, lang: &str,
     }
 
     let term_id = format!("terminal:{}", terminal);
-    for tid in &["terminal:Terminal", "terminal:iTerm", "terminal:Warp", "terminal:tmux", "terminal:Ghostty"] {
+    for tid in &["terminal:Terminal", "terminal:iTerm", "terminal:Warp", "terminal:cmux", "terminal:Ghostty"] {
         set_check_item(app, tid, *tid == term_id.as_str());
     }
 
