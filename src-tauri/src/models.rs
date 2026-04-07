@@ -174,3 +174,23 @@ pub struct SessionStatus {
     pub running: bool,
     pub pid: Option<String>,
 }
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    pub session_id: String,
+    pub project: String,
+    pub snippet: String,
+    pub msg_type: String,
+    pub timestamp: u64,
+    pub message_index: u32,
+    pub score: f32,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchIndexStatus {
+    pub total_sessions: u32,
+    pub indexed_sessions: u32,
+    pub is_indexing: bool,
+}

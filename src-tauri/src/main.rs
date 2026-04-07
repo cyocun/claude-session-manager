@@ -4,9 +4,12 @@
 mod commands;
 mod menu;
 mod models;
+mod search;
 mod tray;
 
-use commands::{archive, projects, resume, sessions, settings};
+use commands::{archive, projects, resume, search as search_cmd, sessions, settings};
+use std::sync::Arc;
+use tauri::Emitter;
 
 #[tauri::command]
 fn sync_menu_state(
@@ -54,11 +57,44 @@ fn main() {
             resume::start_new_session,
             resume::get_resume_command,
             resume::get_session_status,
+            search_cmd::search_sessions,
+            search_cmd::get_search_index_status,
+            search_cmd::update_search_index,
             sync_menu_state,
         ])
         .setup(|app| {
             menu::setup_menu(app.handle())?;
             tray::setup_tray(app.handle())?;
+
+            // Initialize search index
+            let data_dir = dirs::data_dir()
+                .unwrap_or_default()
+                .join("com.cyocun.claude-session-manager");
+            let index_dir = data_dir.join("search-index");
+            let search_index = match search::SearchIndex::new(index_dir) {
+                Ok(idx) => Arc::new(idx),
+                Err(e) => {
+                    eprintln!("Failed to create search index: {}", e);
+                    // Try again after removing corrupted index
+                    let index_dir = data_dir.join("search-index");
+                    let _ = std::fs::remove_dir_all(&index_dir);
+                    Arc::new(
+                        search::SearchIndex::new(index_dir)
+                            .expect("Failed to create search index after cleanup"),
+                    )
+                }
+            };
+            app.manage(search_index.clone());
+
+            // Background index build
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                if let Err(e) = search_index.build_full_index() {
+                    eprintln!("Search index build failed: {}", e);
+                }
+                let _ = handle.emit("search-index-ready", ());
+            });
+
             Ok(())
         })
         .run(tauri::generate_context!())
