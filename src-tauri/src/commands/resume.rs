@@ -87,6 +87,72 @@ fn activate_terminal_window(session_id: &str, terminal_app: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn normalize_terminal_app(app: &str) -> &str {
+    // Backward compatibility for older setting values.
+    if app == "tmux" {
+        "cmux"
+    } else {
+        app
+    }
+}
+
+fn shell_single_quote_escape(s: &str) -> String {
+    s.replace('\'', "'\\''")
+}
+
+fn applescript_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn launch_in_terminal(terminal_app: &str, cmd: &str) -> Result<String, String> {
+    let terminal_app = normalize_terminal_app(terminal_app);
+    let cmd_escaped = applescript_escape(cmd);
+    let script = match terminal_app {
+        "iTerm" => format!(
+            r#"tell application "iTerm"
+                activate
+                tell current window
+                    create tab with default profile
+                    tell current session
+                        write text "{cmd}"
+                    end tell
+                end tell
+            end tell"#,
+            cmd = cmd_escaped
+        ),
+        "Warp" | "Ghostty" | "cmux" => format!(
+            r#"tell application "{app}"
+                activate
+            end tell
+            delay 0.3
+            tell application "System Events"
+                tell process "{app}"
+                    keystroke "t" using command down
+                    delay 0.2
+                    keystroke "{cmd}"
+                    key code 36
+                end tell
+            end tell"#,
+            app = terminal_app,
+            cmd = cmd_escaped
+        ),
+        _ => format!(
+            r#"tell application "Terminal"
+                activate
+                do script "{cmd}"
+            end tell"#,
+            cmd = cmd_escaped
+        ),
+    };
+
+    Command::new("osascript")
+        .args(["-e", &script])
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    Ok(terminal_app.to_string())
+}
+
 #[tauri::command]
 pub fn get_resume_command(session_id: String) -> Result<ResumeCommand, String> {
     let project = find_project_for_session(&session_id).ok_or("Session not found")?;
@@ -110,48 +176,13 @@ pub fn get_session_status(session_id: String) -> SessionStatus {
 #[tauri::command]
 pub fn start_new_session() -> ResumeResult {
     let settings = super::settings::get_settings();
-    let terminal_app = &settings.terminal_app;
+    let terminal_app = normalize_terminal_app(&settings.terminal_app);
     let home = dirs::home_dir().unwrap_or_default().to_string_lossy().to_string();
-    let cmd = format!("cd {} && claude", home);
+    let cmd = format!("cd '{}' && claude", shell_single_quote_escape(&home));
 
-    let script = match terminal_app.as_str() {
-        "iTerm" => format!(
-            r#"tell application "iTerm"
-                activate
-                tell current window
-                    create tab with default profile
-                    tell current session
-                        write text "{cmd}"
-                    end tell
-                end tell
-            end tell"#
-        ),
-        "Warp" | "Ghostty" | "cmux" => format!(
-            r#"tell application "{app}"
-                activate
-            end tell
-            delay 0.3
-            tell application "System Events"
-                tell process "{app}"
-                    keystroke "t" using command down
-                    delay 0.2
-                    keystroke "{cmd}"
-                    key code 36
-                end tell
-            end tell"#,
-            app = terminal_app
-        ),
-        _ => format!(
-            r#"tell application "Terminal"
-                activate
-                do script "{cmd}"
-            end tell"#
-        ),
-    };
-
-    match Command::new("osascript").args(["-e", &script]).spawn() {
-        Ok(_) => ResumeResult { ok: true, method: terminal_app.clone(), pid: None, error: None },
-        Err(e) => ResumeResult { ok: false, method: String::new(), pid: None, error: Some(e.to_string()) },
+    match launch_in_terminal(terminal_app, &cmd) {
+        Ok(method) => ResumeResult { ok: true, method, pid: None, error: None },
+        Err(e) => ResumeResult { ok: false, method: String::new(), pid: None, error: Some(e) },
     }
 }
 
@@ -170,7 +201,7 @@ pub fn resume_session(session_id: String) -> ResumeResult {
     };
 
     let settings = super::settings::get_settings();
-    let terminal_app = &settings.terminal_app;
+    let terminal_app = normalize_terminal_app(&settings.terminal_app);
 
     // Check if already running
     if let Some(pid) = find_running_session(&session_id) {
@@ -183,45 +214,14 @@ pub fn resume_session(session_id: String) -> ResumeResult {
         return ResumeResult { ok: true, method: "activated-app".to_string(), pid: Some(pid), error: None };
     }
 
-    let cmd = format!("cd {} && claude --resume {}", project, session_id);
+    let cmd = format!(
+        "cd '{}' && claude --resume {}",
+        shell_single_quote_escape(&project),
+        shell_single_quote_escape(&session_id)
+    );
 
-    let script = match terminal_app.as_str() {
-        "iTerm" => format!(
-            r#"tell application "iTerm"
-                activate
-                tell current window
-                    create tab with default profile
-                    tell current session
-                        write text "{cmd}"
-                    end tell
-                end tell
-            end tell"#
-        ),
-        "Warp" | "Ghostty" | "cmux" => format!(
-            r#"tell application "{app}"
-                activate
-            end tell
-            delay 0.3
-            tell application "System Events"
-                tell process "{app}"
-                    keystroke "t" using command down
-                    delay 0.2
-                    keystroke "{cmd}"
-                    key code 36
-                end tell
-            end tell"#,
-            app = terminal_app
-        ),
-        _ => format!(
-            r#"tell application "Terminal"
-                activate
-                do script "{cmd}"
-            end tell"#
-        ),
-    };
-
-    match Command::new("osascript").args(["-e", &script]).spawn() {
-        Ok(_) => ResumeResult { ok: true, method: terminal_app.clone(), pid: None, error: None },
-        Err(e) => ResumeResult { ok: false, method: String::new(), pid: None, error: Some(e.to_string()) },
+    match launch_in_terminal(terminal_app, &cmd) {
+        Ok(method) => ResumeResult { ok: true, method, pid: None, error: None },
+        Err(e) => ResumeResult { ok: false, method: String::new(), pid: None, error: Some(e) },
     }
 }

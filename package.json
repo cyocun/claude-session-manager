@@ -4,9 +4,11 @@
   "description": "Claude Code の会話履歴を一元管理する Web UI。複数ディレクトリで実行されたセッションを横断的に閲覧・検索・再開できる。",
   "main": "index.js",
   "scripts": {
+    "build:frontend": "tsc -p tsconfig.json",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:dev": "npm run build:frontend && tauri dev",
+    "tauri:build": "npm run build:frontend && tauri build",
+    "check:types": "tsc -p tsconfig.json --noEmit"
   },
   "repository": {
     "type": "git",
@@ -20,6 +22,7 @@
   },
   "homepage": "https://github.com/cyocun/claude-session-manager#readme",
   "devDependencies": {
-    "@tauri-apps/cli": "^2.10.1"
+    "@tauri-apps/cli": "^2.10.1",
+    "typescript": "^5.9.3"
   }
 }

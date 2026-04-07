@@ -226,38 +226,6 @@ impl SearchIndex {
         messages
     }
 
-    fn extract_tool_input_text(input: &Value, parts: &mut Vec<String>) {
-        if let Some(obj) = input.as_object() {
-            for (_key, val) in obj {
-                if let Some(s) = val.as_str() {
-                    if !s.is_empty() {
-                        parts.push(s.to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    fn extract_tool_result_text(block: &Value, parts: &mut Vec<String>) {
-        let content = match block.get("content") {
-            Some(c) => c,
-            None => return,
-        };
-        match content {
-            Value::String(s) => {
-                parts.push(s.clone());
-            }
-            Value::Array(arr) => {
-                for item in arr {
-                    if let Some(t) = item.get("text").and_then(|v| v.as_str()) {
-                        parts.push(t.to_string());
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
     pub fn search(
         &self,
         query_str: &str,
