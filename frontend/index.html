@@ -273,6 +273,7 @@
     .project-group-header {
       display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 6px; padding: 8px 8px; cursor: default;
       user-select: none; border-radius: 6px; transition: background 0.1s;
+      position: sticky; top: 0; z-index: 10; background: var(--bg);
     }
     .project-group-header:hover { background: var(--item-hover); }
     .project-group-icon { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--text-muted); }
