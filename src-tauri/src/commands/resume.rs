@@ -283,3 +283,33 @@ pub fn resume_session(session_id: String) -> ResumeResult {
         Err(e) => ResumeResult { ok: false, method: String::new(), pid: None, error: Some(e) },
     }
 }
+
+#[tauri::command]
+pub fn resume_with_prompt(session_id: String, prompt: String) -> ResumeResult {
+    let project = match find_project_for_session(&session_id) {
+        Some(p) => p,
+        None => {
+            return ResumeResult {
+                ok: false,
+                method: String::new(),
+                pid: None,
+                error: Some("Session not found".to_string()),
+            }
+        }
+    };
+
+    let settings = super::settings::get_settings();
+    let terminal_app = normalize_terminal_app(&settings.terminal_app);
+
+    let cmd = format!(
+        "cd '{}' && claude --resume {} '{}'",
+        shell_single_quote_escape(&project),
+        shell_single_quote_escape(&session_id),
+        shell_single_quote_escape(&prompt)
+    );
+
+    match launch_in_terminal(terminal_app, &cmd) {
+        Ok(method) => ResumeResult { ok: true, method, pid: None, error: None },
+        Err(e) => ResumeResult { ok: false, method: String::new(), pid: None, error: Some(e) },
+    }
+}

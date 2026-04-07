@@ -30,7 +30,7 @@ type SessionSummary = {
   archived?: boolean;
 };
 
-type ProjectInfo = { path: string; name?: string };
+type ProjectInfo = { path: string; name?: string; lastSessionId?: string; sessionCount?: number; lastTimestamp?: number };
 type ProjectGroup = { path: string; sessions: SessionSummary[] };
 type DetailMessage = { type: string; content?: string; tools?: any[] };
 type SessionDetail = { project: string; messages: DetailMessage[] };
@@ -228,6 +228,115 @@ function renderProjects() {
   // Projects are now only used for display name mapping, no sidebar rendering
   projectNameMap = {};
   projects.forEach(p => { if (p.name) projectNameMap[p.path] = p.name; });
+}
+
+// --- Startup project cards ---
+const iconCache = new Map<string, string | null>();
+
+function hashColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  const hue = Math.abs(h) % 360;
+  return `hsl(${hue}, 55%, 50%)`;
+}
+
+function renderInitialAvatar(name: string): HTMLElement {
+  const initial = (name || '?').charAt(0).toUpperCase();
+  const el = createEl('div', { className: 'startup-card-initial', textContent: initial });
+  el.style.background = hashColor(name);
+  return el;
+}
+
+async function renderStartupCards() {
+  const top4 = projects.slice(0, 4);
+  if (top4.length === 0) return null;
+
+  const container = createEl('div', { className: 'startup-container' });
+  const heading = createEl('div', { className: 'startup-heading', textContent: t('recentProjects') });
+  const grid = createEl('div', { className: 'startup-grid' });
+
+  // Fetch icons in parallel
+  const iconPromises = top4.map(async (p) => {
+    if (iconCache.has(p.path)) return iconCache.get(p.path)!;
+    try {
+      const uri: string | null = await invoke('get_project_icon', { project: p.path });
+      iconCache.set(p.path, uri);
+      return uri;
+    } catch {
+      iconCache.set(p.path, null);
+      return null;
+    }
+  });
+  const icons = await Promise.all(iconPromises);
+
+  top4.forEach((p, i) => {
+    const card = createEl('div', { className: 'startup-card' });
+    const name = projectDisplayName(p.path);
+
+    // Icon or initial avatar
+    const iconUri = icons[i];
+    let iconEl: HTMLElement;
+    if (iconUri) {
+      iconEl = createEl('img', { className: 'startup-card-icon' }) as HTMLImageElement;
+      (iconEl as HTMLImageElement).src = iconUri;
+      (iconEl as HTMLImageElement).alt = name;
+    } else {
+      iconEl = renderInitialAvatar(name);
+    }
+
+    const info = createEl('div', {});
+    const nameEl = createEl('div', { className: 'startup-card-name', textContent: name });
+    nameEl.title = name;
+    const pathEl = createEl('div', { className: 'startup-card-path', textContent: shortPath(p.path) });
+    pathEl.title = p.path;
+
+    const actionsRow = createEl('div', { className: 'startup-card-actions' });
+    const newBtn = createEl('button', {
+      className: 'mac-btn', textContent: t('newSession'),
+      onClick: () => { invoke('start_new_session_in_project', { project: p.path }); },
+    });
+    actionsRow.appendChild(newBtn);
+
+    if (p.lastSessionId) {
+      const resumeBtn = createEl('button', {
+        className: 'mac-btn mac-btn-primary', textContent: t('resumeLast'),
+        onClick: () => { actions.resumeInTerminal(p.lastSessionId!); },
+      });
+      actionsRow.appendChild(resumeBtn);
+    }
+
+    info.appendChild(nameEl);
+    info.appendChild(pathEl);
+    info.appendChild(actionsRow);
+    card.appendChild(iconEl);
+    card.appendChild(info);
+    grid.appendChild(card);
+  });
+
+  container.appendChild(heading);
+  container.appendChild(grid);
+  return container;
+}
+
+function showStartupView() {
+  const pane = byId('detailPane');
+  const messagesEl = byId('detailMessages');
+  const headerEl = byId('detailHeader');
+  const footerEl = byId('detailFooter');
+
+  document.body.style.gridTemplateColumns = '300px 1px 1fr';
+  if (isTauri) {
+    tauriWindow.window.getCurrentWindow().setMinSize(new tauriWindow.window.LogicalSize(700, 500));
+  }
+  byId('resizeHandle').style.display = '';
+  pane.style.display = 'grid';
+  messagesEl.style.display = 'grid';
+  headerEl.replaceChildren();
+  footerEl.replaceChildren();
+
+  renderStartupCards().then(el => {
+    if (el) messagesEl.replaceChildren(el);
+  });
 }
 
 const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
@@ -984,7 +1093,15 @@ async function showDetail(sessionId: string) {
   );
   const resumeCopyBtn = mkBtn(t('copyCmd'), false, () => actions.copyResume(sessionId));
   const archiveBtn = mkBtn(t('archive'), false, () => actions.archiveSingle(sessionId));
-  footerEl.replaceChildren(resumeOpenBtn, resumeCopyBtn, archiveBtn);
+  const summarizeBtn = mkBtn(t('summarize'), false, async () => {
+    const res = await invoke('resume_with_prompt', {
+      sessionId,
+      prompt: 'このセッションの内容を要約して',
+    }) as any;
+    if (res?.ok) actions.showToast(t('toastSummarizing'));
+    else actions.showToast(t('toastError') + (res?.error || ''));
+  });
+  footerEl.replaceChildren(resumeOpenBtn, resumeCopyBtn, summarizeBtn, archiveBtn);
 
   // Chat messages are rendered in two phases:
   // 1) latest chunk immediately for responsiveness
@@ -1035,10 +1152,28 @@ async function showDetail(sessionId: string) {
       }
     }
 
-    if (!hasText) return els;
+    const hasImages = Boolean((m as any).images && (m as any).images.length > 0);
+
+    if (!hasText && !hasImages) return els;
 
     const bubbleInner = createEl('div', { className: 'md-content text-sm leading-relaxed break-words' });
-    bubbleInner.innerHTML = renderMarkdown(m.content || '');
+    if (hasText) bubbleInner.innerHTML = renderMarkdown(m.content || '');
+
+    // Render inline images
+    if (hasImages) {
+      for (const img of (m as any).images) {
+        const imgEl = document.createElement('img');
+        imgEl.className = 'chat-inline-img';
+        if (img.sourceType === 'base64') {
+          imgEl.src = `data:${img.mediaType};base64,${img.data}`;
+        } else {
+          imgEl.src = `asset://localhost/${encodeURIComponent(img.data)}`;
+        }
+        imgEl.alt = 'image';
+        bubbleInner.appendChild(imgEl);
+      }
+    }
+
     const bubble = createEl('div', { className: (isUser ? 'bubble-user' : 'bubble-assistant') + ' px-4 py-2.5' }, [bubbleInner]);
     bubble.style.justifySelf = isUser ? 'end' : 'start';
     els.push(bubble);
@@ -1223,6 +1358,8 @@ Promise.all([fetchSessions(), fetchProjects(), fetchSettings()]).then(() => {
     lang: lang,
     showArchived: false,
   });
+  // Show startup project cards when no session is selected
+  showStartupView();
 });
 
 // Auto-refresh every 30s to detect updated sessions
