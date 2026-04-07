@@ -47,7 +47,7 @@ impl From<RawHistoryEntry> for HistoryEntry {
                     if let Some(end) = display[start..].find(']') {
                         let first_line = pc.content.lines().next().unwrap_or("");
                         let preview: String = first_line.chars().take(80).collect();
-                        display.replace_range(start..start + end + 1, &preview);
+                        display.replace_range(start..=start + end, &preview);
                     }
                 }
             }

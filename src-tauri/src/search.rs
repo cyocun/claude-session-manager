@@ -99,7 +99,16 @@ impl SearchIndex {
             .map(|(k, v)| (k.clone(), serde_json::Value::Number((*v).into())))
             .collect();
         let meta = serde_json::json!({ "sessions": sessions });
-        let _ = std::fs::write(&self.meta_path, serde_json::to_string(&meta).unwrap_or_default());
+        match serde_json::to_string(&meta) {
+            Ok(json) => {
+                if let Err(e) = std::fs::write(&self.meta_path, json) {
+                    eprintln!("Failed to write search index metadata: {}", e);
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to serialize search index metadata: {}", e);
+            }
+        }
     }
 
     pub fn needs_reindex(&self, session_id: &str, file_size: u64) -> bool {
@@ -232,6 +241,7 @@ impl SearchIndex {
         project_filter: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchHit>, Box<dyn std::error::Error>> {
+        let limit = limit.min(500);
         let searcher = self.reader.searcher();
         let query_parser = QueryParser::for_index(&self.index, vec![self.f_content]);
 

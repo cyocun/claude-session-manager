@@ -140,8 +140,9 @@ async function fetchProjects() {
   projects.forEach(p => { if (p.name) projectNameMap[p.path] = p.name; });
   renderProjects();
 }
-async function fetchDetail(sessionId: string): Promise<SessionDetail> {
-  return await invoke('get_session_detail', { sessionId }) as SessionDetail;
+async function fetchDetail(sessionId: string): Promise<SessionDetail | null> {
+  const detail = await invoke('get_session_detail', { sessionId });
+  return detail as SessionDetail | null;
 }
 async function fetchSettings() {
   serverSettings = await invoke('get_settings') || {};
@@ -413,6 +414,10 @@ async function showDetail(sessionId: string) {
 
   const cached = getPreviewDetailCached(sessionId);
   const detail = cached || await fetchDetail(sessionId);
+  if (!detail) {
+    actions.showToast(t('toastError'));
+    return;
+  }
   setPreviewDetailCached(sessionId, detail);
 
   const sessionSummary = sessions.find(s => s.sessionId === sessionId);

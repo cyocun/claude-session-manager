@@ -5,11 +5,17 @@ use std::io::{BufRead, BufReader};
 use std::process::Command;
 
 fn claude_dir() -> std::path::PathBuf {
-    dirs::home_dir().unwrap().join(".claude")
+    dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".claude")
 }
 
 fn resolve_project_name(project_path: &str) -> Option<String> {
-    let p = std::path::Path::new(project_path);
+    let canonical = std::fs::canonicalize(project_path).ok()?;
+    if !canonical.is_dir() {
+        return None;
+    }
+    let p = canonical.as_path();
 
     // 1. package.json
     let pkg = p.join("package.json");
@@ -26,8 +32,9 @@ fn resolve_project_name(project_path: &str) -> Option<String> {
     }
 
     // 2. git remote origin
+    let canonical_str = canonical.to_string_lossy().to_string();
     if let Ok(output) = Command::new("git")
-        .args(["-C", project_path, "remote", "get-url", "origin"])
+        .args(["-C", &canonical_str, "remote", "get-url", "origin"])
         .output()
     {
         let url = String::from_utf8_lossy(&output.stdout).trim().to_string();

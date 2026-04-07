@@ -6,7 +6,9 @@ use std::io::{BufRead, BufReader};
 use walkdir::WalkDir;
 
 pub fn claude_dir() -> std::path::PathBuf {
-    dirs::home_dir().unwrap().join(".claude")
+    dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".claude")
 }
 
 fn history_file() -> std::path::PathBuf {

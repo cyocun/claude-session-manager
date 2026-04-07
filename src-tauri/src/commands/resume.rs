@@ -4,7 +4,9 @@ use std::io::{BufRead, BufReader};
 use std::process::Command;
 
 fn claude_dir() -> std::path::PathBuf {
-    dirs::home_dir().unwrap().join(".claude")
+    dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".claude")
 }
 
 fn find_project_for_session(session_id: &str) -> Option<String> {

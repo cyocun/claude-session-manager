@@ -6,6 +6,16 @@ let previewEl: HTMLDivElement | null = null;
 let previewTimer: ReturnType<typeof setTimeout> | null = null;
 let previewSessionId: string | null = null;
 let previewAnchorRect: DOMRect | null = null;
+const PREVIEW_CACHE_MAX = 200;
+
+function trimPreviewCache(): void {
+  const keys = Object.keys(previewCache);
+  const overflow = keys.length - PREVIEW_CACHE_MAX;
+  if (overflow <= 0) return;
+  for (let i = 0; i < overflow; i++) {
+    delete previewCache[keys[i]];
+  }
+}
 
 function clearTimer(): void {
   if (previewTimer !== null) {
@@ -77,7 +87,9 @@ function showPreview(sessionId: string, anchorRect: DOMRect): void {
   positionPreview();
 
   invoke('get_session_detail', { sessionId }).then((detail) => {
+    if (!detail) return;
     previewCache[sessionId] = detail;
+    trimPreviewCache();
     if (previewSessionId === sessionId) renderPreview(detail);
   });
 }
@@ -92,7 +104,9 @@ export function getPreviewDetailCached(sessionId: string): any | null {
 }
 
 export function setPreviewDetailCached(sessionId: string, detail: any): void {
+  if (!detail) return;
   previewCache[sessionId] = detail;
+  trimPreviewCache();
 }
 
 export function schedulePreviewShow(sessionId: string, anchorRect: DOMRect): void {

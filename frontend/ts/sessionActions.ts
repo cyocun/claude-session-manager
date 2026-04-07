@@ -52,6 +52,10 @@ export function createSessionActions(deps: SessionActionsDeps) {
 
   async function copyResume(sessionId: string): Promise<void> {
     const data = await invoke('get_resume_command', { sessionId });
+    if (!data?.command) {
+      showToast(t('toastError'));
+      return;
+    }
     await copyText(data.command);
     showToast(t('toastCopied'));
   }
