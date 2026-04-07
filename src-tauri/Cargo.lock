@@ -386,6 +386,7 @@ name = "claude-session-manager"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "base64 0.22.1",
  "chrono",
  "dirs 5.0.1",
  "serde",

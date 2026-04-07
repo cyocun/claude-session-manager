@@ -148,7 +148,25 @@ pub fn normalize_message_text(raw: &str) -> String {
         return cleaned.trim().to_string();
     }
 
-    text.to_string()
+    // Always strip system tags that Claude Code injects into user messages
+    let mut cleaned = text.to_string();
+    for tag in [
+        "local-command-caveat",
+        "command-name",
+        "command-message",
+        "command-args",
+        "bash-input",
+        "bash-stdout",
+        "bash-stderr",
+        "current_datetime",
+        "reminder",
+        "sql_tables",
+        "system-reminder",
+        "antml_thinking",
+    ] {
+        cleaned = strip_tag_block(cleaned, tag);
+    }
+    cleaned.trim().to_string()
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -242,6 +260,8 @@ pub struct Message {
     pub timestamp: serde_json::Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<ToolInfo>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub images: Option<Vec<ImageBlock>>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -274,12 +294,22 @@ pub struct ToolInfo {
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageBlock {
+    pub media_type: String,
+    pub data: String,
+    pub source_type: String,
+}
+
 pub struct ProjectInfo {
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     pub session_count: u32,
     pub last_timestamp: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_session_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

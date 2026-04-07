@@ -97,12 +97,14 @@ pub fn list_projects() -> Vec<ProjectInfo> {
         };
 
         let proj = entry.project.clone();
+        let sid = entry.session_id.clone();
         projects
             .entry(proj.clone())
             .and_modify(|p| {
                 p.session_count += 1;
                 if entry.timestamp > p.last_timestamp {
                     p.last_timestamp = entry.timestamp;
+                    p.last_session_id = Some(sid.clone());
                 }
             })
             .or_insert_with(|| ProjectInfo {
@@ -110,12 +112,57 @@ pub fn list_projects() -> Vec<ProjectInfo> {
                 name: resolve_project_name(&proj),
                 session_count: 1,
                 last_timestamp: entry.timestamp,
+                last_session_id: Some(sid),
             });
     }
 
     let mut results: Vec<ProjectInfo> = projects.into_values().collect();
     results.sort_by(|a, b| b.last_timestamp.cmp(&a.last_timestamp));
     results
+}
+
+#[tauri::command]
+pub fn get_project_icon(project: String) -> Result<Option<String>, String> {
+    let base = std::path::Path::new(&project);
+    if !base.is_dir() {
+        return Ok(None);
+    }
+
+    let candidates = [
+        "favicon.ico",
+        "favicon.png",
+        "favicon.svg",
+        "public/favicon.ico",
+        "public/favicon.png",
+        "public/favicon.svg",
+        "assets/icon.png",
+        "assets/icon.svg",
+        "src-tauri/icons/icon.png",
+    ];
+
+    for candidate in &candidates {
+        let path = base.join(candidate);
+        if path.is_file() {
+            if let Ok(bytes) = std::fs::read(&path) {
+                // Skip files larger than 256KB
+                if bytes.len() > 256 * 1024 {
+                    continue;
+                }
+                let mime = match path.extension().and_then(|e| e.to_str()) {
+                    Some("ico") => "image/x-icon",
+                    Some("png") => "image/png",
+                    Some("svg") => "image/svg+xml",
+                    Some("jpg") | Some("jpeg") => "image/jpeg",
+                    _ => "image/png",
+                };
+                use base64::Engine;
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                return Ok(Some(format!("data:{};base64,{}", mime, b64)));
+            }
+        }
+    }
+
+    Ok(None)
 }
 
 fn now_ts() -> u64 {

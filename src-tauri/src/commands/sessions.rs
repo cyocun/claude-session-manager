@@ -221,6 +221,7 @@ fn extract_message(msg: &Value) -> Option<Message> {
 
     let mut text_parts: Vec<String> = Vec::new();
     let mut tools: Vec<ToolInfo> = Vec::new();
+    let mut images: Vec<ImageBlock> = Vec::new();
 
     match content_val {
         Value::String(s) => {
@@ -235,6 +236,30 @@ fn extract_message(msg: &Value) -> Option<Message> {
                             if btype == "text" {
                                 if let Some(t) = block.get("text").and_then(|v| v.as_str()) {
                                     text_parts.push(normalize_message_text(t));
+                                }
+                            } else if btype == "image" {
+                                if let Some(source) = block.get("source") {
+                                    let src_type = source.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                                    let media_type = source.get("media_type").and_then(|v| v.as_str()).unwrap_or("image/png");
+                                    if src_type == "base64" {
+                                        if let Some(data) = source.get("data").and_then(|v| v.as_str()) {
+                                            images.push(ImageBlock {
+                                                media_type: media_type.to_string(),
+                                                data: data.chars().take(500_000).collect(),
+                                                source_type: "base64".to_string(),
+                                            });
+                                        }
+                                    } else if src_type == "file" {
+                                        if let Some(path) = source.get("file_path").or_else(|| source.get("path")).and_then(|v| v.as_str()) {
+                                            if path.starts_with('/') && !path.contains("..") {
+                                                images.push(ImageBlock {
+                                                    media_type: media_type.to_string(),
+                                                    data: path.to_string(),
+                                                    source_type: "file".to_string(),
+                                                });
+                                            }
+                                        }
+                                    }
                                 }
                             } else if let Some(tool) = extract_tool_info(block) {
                                 tools.push(tool);
@@ -255,6 +280,7 @@ fn extract_message(msg: &Value) -> Option<Message> {
         content,
         timestamp,
         tools: if tools.is_empty() { None } else { Some(tools) },
+        images: if images.is_empty() { None } else { Some(images) },
     })
 }
 
