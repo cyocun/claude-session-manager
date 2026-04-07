@@ -294,14 +294,14 @@ pub struct ToolInfo {
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct ImageBlock {
     pub media_type: String,
     pub data: String,
     pub source_type: String,
 }
 
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectInfo {
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]

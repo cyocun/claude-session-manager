@@ -8,6 +8,10 @@ let previewSessionId: string | null = null;
 let previewAnchorRect: DOMRect | null = null;
 const PREVIEW_CACHE_MAX = 200;
 
+// Activation state: first hover needs 500ms, then instant until idle 1s outside list
+let previewActivated = false;
+let deactivateTimer: ReturnType<typeof setTimeout> | null = null;
+
 function trimPreviewCache(): void {
   const keys = Object.keys(previewCache);
   const overflow = keys.length - PREVIEW_CACHE_MAX;
@@ -24,14 +28,22 @@ function clearTimer(): void {
   }
 }
 
+function clearDeactivateTimer(): void {
+  if (deactivateTimer !== null) {
+    clearTimeout(deactivateTimer);
+    deactivateTimer = null;
+  }
+}
+
 function positionPreview(): void {
   if (!previewAnchorRect || !previewEl) return;
   const listPane = document.getElementById('sessionListPane') as HTMLElement | null;
   if (!listPane) return;
 
-  const x = listPane.getBoundingClientRect().right + 12;
-  previewEl.style.right = '10px';
-  previewEl.style.left = 'auto';
+  const listRight = listPane.getBoundingClientRect().right;
+  // Position to the right of the left column
+  previewEl.style.left = (listRight + 8) + 'px';
+  previewEl.style.right = 'auto';
   previewEl.style.top = '0px';
   previewEl.style.visibility = 'hidden';
   const actualH = previewEl.offsetHeight;
@@ -41,7 +53,6 @@ function positionPreview(): void {
   previewEl.style.top = finalY + 'px';
   const arrowTop = Math.max(20, Math.min(anchorMid - finalY, actualH - 20));
   previewEl.style.setProperty('--arrow-top', arrowTop + 'px');
-  void x;
 }
 
 function renderPreview(detail: any): void {
@@ -111,22 +122,37 @@ export function setPreviewDetailCached(sessionId: string, detail: any): void {
 
 export function schedulePreviewShow(sessionId: string, anchorRect: DOMRect): void {
   clearTimer();
+  clearDeactivateTimer();
+  const delay = previewActivated ? 0 : 500;
   previewTimer = setTimeout(() => {
+    previewActivated = true;
     showPreview(sessionId, anchorRect);
-  }, 150);
+  }, delay);
 }
 
 export function schedulePreviewHide(): void {
   clearTimer();
   previewTimer = setTimeout(hidePreview, 200);
+  // Start deactivation timer: if no session hovered for 1s, reset to initial state
+  clearDeactivateTimer();
+  deactivateTimer = setTimeout(() => {
+    previewActivated = false;
+  }, 1000);
 }
 
 export function initPreview(): void {
   previewEl = document.createElement('div');
   previewEl.className = 'session-preview hidden';
-  previewEl.addEventListener('mouseenter', () => clearTimer());
+  previewEl.addEventListener('mouseenter', () => {
+    clearTimer();
+    clearDeactivateTimer();
+  });
   previewEl.addEventListener('mouseleave', () => {
     previewTimer = setTimeout(hidePreview, 200);
+    clearDeactivateTimer();
+    deactivateTimer = setTimeout(() => {
+      previewActivated = false;
+    }, 1000);
   });
   document.body.appendChild(previewEl);
 }

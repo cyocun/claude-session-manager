@@ -17,3 +17,4 @@ tauri-plugin-window-state = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 arboard = "3"
 base64 = "0.22"
+regex = "1"

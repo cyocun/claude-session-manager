@@ -35,7 +35,7 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     chatSearch,
   } = deps;
 
-  let searchMode: 'filter' | 'fulltext' | 'similar' = 'filter';
+  let searchMode: 'filter' | 'fulltext' | 'similar' = 'fulltext';
   let searchResults: SearchHit[] = [];
   let searchIndexReady = false;
   let fulltextSearchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -49,29 +49,11 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
   }
 
   function toggleMode(): void {
-    searchMode = searchMode === 'filter' ? 'fulltext' : searchMode === 'fulltext' ? 'similar' : 'filter';
-    const btn = byId('searchModeBtn');
+    searchMode = searchMode === 'fulltext' ? 'similar' : 'fulltext';
     const search = byId('search') as HTMLInputElement;
-    if (searchMode === 'fulltext') {
-      btn.style.background = 'var(--accent)';
-      btn.style.color = '#fff';
-      btn.title = t('searchSimilar');
-      search.placeholder = t('searchContent');
-    } else if (searchMode === 'similar') {
-      btn.style.background = 'var(--accent)';
-      btn.style.color = '#fff';
-      btn.title = t('filterMode');
-      search.placeholder = t('searchSimilar');
-    } else {
-      btn.style.background = '';
-      btn.style.color = '';
-      btn.title = t('searchContent');
-      search.placeholder = t('searchPlaceholder');
-      searchResults = [];
-      renderSessions();
-    }
+    search.placeholder = searchMode === 'similar' ? t('searchSimilar') : t('searchContent');
     const q = search.value.trim();
-    if (q && (searchMode === 'fulltext' || searchMode === 'similar')) {
+    if (q) {
       void perform(q);
     }
   }

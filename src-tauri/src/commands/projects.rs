@@ -6,6 +6,7 @@ use std::io::{BufRead, BufReader};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::{Emitter, Listener};
 
 fn claude_dir() -> std::path::PathBuf {
     dirs::home_dir()
@@ -163,6 +164,150 @@ pub fn get_project_icon(project: String) -> Result<Option<String>, String> {
     }
 
     Ok(None)
+}
+
+fn read_project_readme(project: &str) -> Option<String> {
+    let base = std::path::Path::new(project);
+    if !base.is_dir() {
+        return None;
+    }
+    let candidates = ["README.md", "readme.md", "Readme.md", "README.markdown", "README.txt", "README"];
+    for name in &candidates {
+        let path = base.join(name);
+        if path.is_file() {
+            if let Ok(meta) = std::fs::metadata(&path) {
+                if meta.len() > 512 * 1024 {
+                    return None;
+                }
+            }
+            return std::fs::read_to_string(&path).ok();
+        }
+    }
+    None
+}
+
+#[tauri::command]
+pub fn get_project_readme(project: String) -> Result<Option<String>, String> {
+    Ok(read_project_readme(&project))
+}
+
+#[tauri::command]
+pub fn get_project_readme_by_path(path: String) -> Result<Option<String>, String> {
+    let p = std::path::Path::new(&path);
+    if !p.is_file() {
+        return Ok(None);
+    }
+    if let Ok(meta) = std::fs::metadata(p) {
+        if meta.len() > 512 * 1024 {
+            return Ok(None);
+        }
+    }
+    // Resolve images relative to the file's parent directory
+    let content = std::fs::read_to_string(p).map_err(|e| e.to_string())?;
+    let parent = p.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default();
+    Ok(Some(resolve_readme_images(&content, &parent)))
+}
+
+static README_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Resolve image paths in markdown to data URIs.
+/// - Relative paths (./img.png, docs/img.png) → base64 data URI
+/// - localhost URLs (http://127.0.0.1:*/path, http://localhost:*/path) → base64 data URI
+/// - Absolute http(s) URLs → left as-is
+fn resolve_readme_images(content: &str, project_path: &str) -> String {
+    let base = std::path::Path::new(project_path);
+
+    let resolve_to_local = |src: &str| -> Option<std::path::PathBuf> {
+        let trimmed = src.trim();
+        // localhost URLs → extract path
+        if let Some(path) = trimmed
+            .strip_prefix("http://127.0.0.1")
+            .or_else(|| trimmed.strip_prefix("http://localhost"))
+        {
+            if let Some(pos) = path.find('/') {
+                let local = &path[pos..];
+                let abs = base.join(local.trim_start_matches('/'));
+                if abs.is_file() {
+                    return Some(abs);
+                }
+            }
+            return None;
+        }
+        // External URL → skip
+        if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+            return None;
+        }
+        // Relative path
+        let cleaned = trimmed.trim_start_matches("./");
+        let abs = base.join(cleaned);
+        if abs.is_file() { Some(abs) } else { None }
+    };
+
+    let to_data_uri = |path: &std::path::Path| -> Option<String> {
+        let bytes = std::fs::read(path).ok()?;
+        if bytes.len() > 2 * 1024 * 1024 { return None; } // Skip > 2MB
+        let mime = match path.extension().and_then(|e| e.to_str()) {
+            Some("png") => "image/png",
+            Some("jpg") | Some("jpeg") => "image/jpeg",
+            Some("gif") => "image/gif",
+            Some("svg") => "image/svg+xml",
+            Some("webp") => "image/webp",
+            Some("ico") => "image/x-icon",
+            _ => "application/octet-stream",
+        };
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        Some(format!("data:{};base64,{}", mime, b64))
+    };
+
+    // Match markdown image syntax: ![alt](src)
+    let re_md = regex::Regex::new(r"!\[([^\]]*)\]\(([^)]+)\)").unwrap();
+    // Match HTML img tags: <img ... src="..." ...>
+    let re_html = regex::Regex::new(r#"(<img\s[^>]*?\bsrc\s*=\s*")([^"]+)(")"#).unwrap();
+
+    let result = re_md.replace_all(content, |caps: &regex::Captures| {
+        let alt = &caps[1];
+        let src = &caps[2];
+        if let Some(path) = resolve_to_local(src) {
+            if let Some(data_uri) = to_data_uri(&path) {
+                return format!("![{}]({})", alt, data_uri);
+            }
+        }
+        caps[0].to_string()
+    });
+    let result = re_html.replace_all(&result, |caps: &regex::Captures| {
+        let src = &caps[2];
+        if let Some(path) = resolve_to_local(src) {
+            if let Some(data_uri) = to_data_uri(&path) {
+                return format!("{}{}{}", &caps[1], data_uri, &caps[3]);
+            }
+        }
+        caps[0].to_string()
+    });
+    result.into_owned()
+}
+
+#[tauri::command]
+pub fn open_readme_window(app: tauri::AppHandle, project: String, name: String) -> Result<(), String> {
+    let raw = read_project_readme(&project).ok_or("README not found")?;
+    let content = resolve_readme_images(&raw, &project);
+    let label = format!("readme-{}", README_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    let title = format!("{} — README", name);
+
+    let win = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App("readme.html".into()))
+        .title(&title)
+        .inner_size(800.0, 700.0)
+        .center()
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let payload = serde_json::json!({ "content": content, "projectPath": project });
+    let win2 = win.clone();
+    win.once("readme-ready", move |_| {
+        let _ = win2.emit("load-readme", &payload);
+    });
+
+    Ok(())
 }
 
 fn now_ts() -> u64 {

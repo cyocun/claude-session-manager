@@ -97,21 +97,12 @@ function applyI18n() {
     const node = el as HTMLElement;
     el.textContent = t(node.dataset.i18nOption || '');
   });
-  byId('search').placeholder = t('searchPlaceholder');
+  byId('search').placeholder = t('searchContent');
   const cs = byId('chatSearch');
   if (cs) cs.placeholder = t('chatSearchPlaceholder');
   byId('newSessionBtn').title = lang === 'ja' ? '新規セッション' : 'New Session';
   const tokenBtn = byId('tokenDashboardBtn') as HTMLButtonElement | null;
   if (tokenBtn) tokenBtn.title = t('tokenDashboard');
-  const searchModeBtn = byId('searchModeBtn') as HTMLButtonElement | null;
-  const mode = fullTextSearch.getMode();
-  if (searchModeBtn) {
-    searchModeBtn.title = mode === 'filter'
-      ? t('searchContent')
-      : mode === 'fulltext'
-        ? t('searchSimilar')
-        : t('filterMode');
-  }
 }
 
 // --- Theme ---
@@ -247,16 +238,64 @@ function renderInitialAvatar(name: string): HTMLElement {
   return el;
 }
 
-async function renderStartupCards() {
-  const top4 = projects.slice(0, 4);
-  if (top4.length === 0) return null;
+async function openReadmeWindow(projectPath: string, projectName: string) {
+  const result = await invoke('open_readme_window', { project: projectPath, name: projectName });
+  if (result === null) {
+    actions.showToast(t('readmeNotFound'));
+  }
+}
 
-  const container = createEl('div', { className: 'startup-container' });
-  const heading = createEl('div', { className: 'startup-heading', textContent: t('recentProjects') });
-  const grid = createEl('div', { className: 'startup-grid' });
+function renderProjectCard(p: ProjectInfo, iconUri: string | null): HTMLElement {
+  const card = createEl('div', { className: 'startup-card', onClick: () => focusProjectInSidebar(p.path) });
+  card.style.cursor = 'pointer';
+  const name = projectDisplayName(p.path);
 
-  // Fetch icons in parallel
-  const iconPromises = top4.map(async (p) => {
+  let iconEl: HTMLElement;
+  if (iconUri) {
+    iconEl = createEl('img', { className: 'startup-card-icon' }) as HTMLImageElement;
+    (iconEl as HTMLImageElement).src = iconUri;
+    (iconEl as HTMLImageElement).alt = name;
+  } else {
+    iconEl = renderInitialAvatar(name);
+  }
+
+  const info = createEl('div', {});
+  const nameEl = createEl('div', { className: 'startup-card-name', textContent: name });
+  nameEl.title = name;
+  const pathEl = createEl('div', { className: 'startup-card-path', textContent: shortPath(p.path) });
+  pathEl.title = p.path;
+
+  const actionsRow = createEl('div', { className: 'startup-card-actions' });
+  const newBtn = createEl('button', {
+    className: 'mac-btn', textContent: t('newSession'),
+    onClick: () => { invoke('start_new_session_in_project', { project: p.path }); },
+  });
+  actionsRow.appendChild(newBtn);
+
+  if (p.lastSessionId) {
+    const resumeBtn = createEl('button', {
+      className: 'mac-btn mac-btn-primary', textContent: t('resumeLast'),
+      onClick: () => { actions.resumeInTerminal(p.lastSessionId!); },
+    });
+    actionsRow.appendChild(resumeBtn);
+  }
+
+  const readmeBtn = createEl('button', {
+    className: 'mac-btn', textContent: t('readme'),
+    onClick: () => { openReadmeWindow(p.path, name); },
+  });
+  actionsRow.appendChild(readmeBtn);
+
+  info.appendChild(nameEl);
+  info.appendChild(pathEl);
+  info.appendChild(actionsRow);
+  card.appendChild(iconEl);
+  card.appendChild(info);
+  return card;
+}
+
+async function fetchIcons(list: ProjectInfo[]): Promise<(string | null)[]> {
+  return Promise.all(list.map(async (p) => {
     if (iconCache.has(p.path)) return iconCache.get(p.path)!;
     try {
       const uri: string | null = await invoke('get_project_icon', { project: p.path });
@@ -266,55 +305,44 @@ async function renderStartupCards() {
       iconCache.set(p.path, null);
       return null;
     }
-  });
-  const icons = await Promise.all(iconPromises);
+  }));
+}
 
-  top4.forEach((p, i) => {
-    const card = createEl('div', { className: 'startup-card' });
-    const name = projectDisplayName(p.path);
+const INITIAL_PROJECT_COUNT = 4;
 
-    // Icon or initial avatar
-    const iconUri = icons[i];
-    let iconEl: HTMLElement;
-    if (iconUri) {
-      iconEl = createEl('img', { className: 'startup-card-icon' }) as HTMLImageElement;
-      (iconEl as HTMLImageElement).src = iconUri;
-      (iconEl as HTMLImageElement).alt = name;
-    } else {
-      iconEl = renderInitialAvatar(name);
-    }
+async function renderStartupCards() {
+  if (projects.length === 0) return null;
 
-    const info = createEl('div', {});
-    const nameEl = createEl('div', { className: 'startup-card-name', textContent: name });
-    nameEl.title = name;
-    const pathEl = createEl('div', { className: 'startup-card-path', textContent: shortPath(p.path) });
-    pathEl.title = p.path;
+  const initial = projects.slice(0, INITIAL_PROJECT_COUNT);
+  const container = createEl('div', { className: 'startup-container' });
+  const heading = createEl('div', { className: 'startup-heading', textContent: t('recentProjects') });
+  const grid = createEl('div', { className: 'startup-grid' });
 
-    const actionsRow = createEl('div', { className: 'startup-card-actions' });
-    const newBtn = createEl('button', {
-      className: 'mac-btn', textContent: t('newSession'),
-      onClick: () => { invoke('start_new_session_in_project', { project: p.path }); },
-    });
-    actionsRow.appendChild(newBtn);
-
-    if (p.lastSessionId) {
-      const resumeBtn = createEl('button', {
-        className: 'mac-btn mac-btn-primary', textContent: t('resumeLast'),
-        onClick: () => { actions.resumeInTerminal(p.lastSessionId!); },
-      });
-      actionsRow.appendChild(resumeBtn);
-    }
-
-    info.appendChild(nameEl);
-    info.appendChild(pathEl);
-    info.appendChild(actionsRow);
-    card.appendChild(iconEl);
-    card.appendChild(info);
-    grid.appendChild(card);
-  });
+  const icons = await fetchIcons(initial);
+  initial.forEach((p, i) => grid.appendChild(renderProjectCard(p, icons[i])));
 
   container.appendChild(heading);
   container.appendChild(grid);
+
+  if (projects.length > INITIAL_PROJECT_COUNT) {
+    const moreBtn = createEl('button', {
+      className: 'mac-btn startup-more-btn',
+      textContent: `More (${projects.length - INITIAL_PROJECT_COUNT})`,
+      onClick: async () => {
+        const rest = projects.slice(INITIAL_PROJECT_COUNT);
+        const restIcons = await fetchIcons(rest);
+        rest.forEach((p, i) => grid.appendChild(renderProjectCard(p, restIcons[i])));
+        moreBtn.remove();
+        // More展開後はコンテンツが増えるので中央配置を解除してスクロール可能に
+        container.style.justifyContent = 'flex-start';
+        requestAnimationFrame(() => {
+          container.scrollTop = 0;
+        });
+      },
+    });
+    container.appendChild(moreBtn);
+  }
+
   return container;
 }
 
@@ -351,6 +379,48 @@ const TOKEN_TREND_POINT_LIMIT: Record<TokenTrendPeriod, number> = {
   week: 26,
   month: 24,
 };
+
+function focusProjectInSidebar(projectPath: string): void {
+  const displayName = projectDisplayName(projectPath);
+
+  // Find the matching group header in the DOM
+  const findAndFocus = () => {
+    const headers = Array.from(document.querySelectorAll('.project-group-header'));
+    let targetHeader: Element | null = null;
+    for (const h of headers) {
+      const nameEl = h.querySelector('.truncate');
+      if (nameEl?.textContent === displayName) {
+        targetHeader = h;
+        break;
+      }
+    }
+    if (!targetHeader) return false;
+
+    // Ensure accordion is open
+    const chevron = targetHeader.querySelector('.project-group-chevron');
+    const sessionsDiv = targetHeader.nextElementSibling;
+    if (chevron && !chevron.classList.contains('open')) {
+      chevron.classList.add('open');
+      sessionsDiv?.classList.add('open');
+      if (toggledProjects.has(projectPath)) toggledProjects.delete(projectPath);
+      else toggledProjects.add(projectPath);
+      saveToggled();
+    }
+
+    targetHeader.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return true;
+  };
+
+  // If not found, clear search filter and try again
+  if (!findAndFocus()) {
+    const searchEl = byId('search') as HTMLInputElement;
+    if (searchEl.value) {
+      searchEl.value = '';
+      renderSessions();
+    }
+    requestAnimationFrame(findAndFocus);
+  }
+}
 
 function isRecentProject(g: ProjectGroup): boolean {
   return (Date.now() - g.sessions[0].lastTimestamp) < SEVEN_DAYS;
@@ -1277,10 +1347,8 @@ initResizeHandle(byId);
 byId('search').addEventListener('input', () => {
   fullTextSearch.onSearchInput();
 });
-byId('searchModeBtn').addEventListener('click', () => fullTextSearch.toggleMode());
-byId('searchModeBtn').addEventListener('contextmenu', (e: Event) => {
-  e.preventDefault();
-  void openTokenModal();
+byId('homeBtn').addEventListener('click', () => {
+  showStartupView();
 });
 byId('tokenDashboardBtn').addEventListener('click', () => {
   void openTokenModal();

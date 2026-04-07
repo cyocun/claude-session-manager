@@ -91,6 +91,8 @@ export const I18N = {
     resumeLast: '最後のセッションを再開',
     summarize: '要約',
     toastSummarizing: 'ターミナルで要約を生成中...',
+    readme: 'README',
+    readmeNotFound: 'READMEが見つかりません',
   },
   en: {
     searchPlaceholder: 'Search...',
@@ -184,6 +186,8 @@ export const I18N = {
     resumeLast: 'Resume Last',
     summarize: 'Summarize',
     toastSummarizing: 'Generating summary in terminal...',
+    readme: 'README',
+    readmeNotFound: 'README not found',
   },
 } as const;
 

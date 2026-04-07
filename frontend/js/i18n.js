@@ -86,6 +86,13 @@ export const I18N = {
         decisionKindAdopt: '採用',
         decisionKindReject: '却下',
         decisionKindPriority: '優先度',
+        recentProjects: '最近のプロジェクト',
+        newSession: '新規セッション',
+        resumeLast: '最後のセッションを再開',
+        summarize: '要約',
+        toastSummarizing: 'ターミナルで要約を生成中...',
+        readme: 'README',
+        readmeNotFound: 'READMEが見つかりません',
     },
     en: {
         searchPlaceholder: 'Search...',
@@ -174,6 +181,13 @@ export const I18N = {
         decisionKindAdopt: 'Adopted',
         decisionKindReject: 'Rejected',
         decisionKindPriority: 'Priority',
+        recentProjects: 'Recent Projects',
+        newSession: 'New Session',
+        resumeLast: 'Resume Last',
+        summarize: 'Summarize',
+        toastSummarizing: 'Generating summary in terminal...',
+        readme: 'README',
+        readmeNotFound: 'README not found',
     },
 };
 export function detectLang() {

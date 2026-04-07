@@ -313,3 +313,13 @@ pub fn resume_with_prompt(session_id: String, prompt: String) -> ResumeResult {
         Err(e) => ResumeResult { ok: false, method: String::new(), pid: None, error: Some(e) },
     }
 }
+
+/// Open a URL in the default browser or a file path in the default application.
+#[tauri::command]
+pub fn open_path(path: String) -> Result<(), String> {
+    Command::new("open")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
