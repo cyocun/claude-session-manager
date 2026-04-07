@@ -194,27 +194,13 @@ impl SearchIndex {
                             Value::String(s) => text_parts.push(s.clone()),
                             Value::Object(_) => {
                                 if let Some(btype) = block.get("type").and_then(|v| v.as_str()) {
-                                    match btype {
-                                        "text" => {
-                                            if let Some(t) =
-                                                block.get("text").and_then(|v| v.as_str())
-                                            {
-                                                text_parts.push(t.to_string());
-                                            }
+                                    // Only index user/assistant text, skip tool_use and tool_result
+                                    if btype == "text" {
+                                        if let Some(t) =
+                                            block.get("text").and_then(|v| v.as_str())
+                                        {
+                                            text_parts.push(t.to_string());
                                         }
-                                        "tool_use" => {
-                                            // Extract all text from tool input
-                                            if let Some(input) = block.get("input") {
-                                                Self::extract_tool_input_text(
-                                                    input,
-                                                    &mut text_parts,
-                                                );
-                                            }
-                                        }
-                                        "tool_result" => {
-                                            Self::extract_tool_result_text(block, &mut text_parts);
-                                        }
-                                        _ => {}
                                     }
                                 }
                             }
@@ -296,13 +282,12 @@ impl SearchIndex {
             text_query
         };
 
-        // Fetch more than limit to allow grouping by session
-        let top_docs = searcher.search(&final_query, &TopDocs::with_limit(limit * 3))?;
+        // Return all matching messages (not just best per session)
+        let top_docs = searcher.search(&final_query, &TopDocs::with_limit(limit * 5))?;
 
         let snippet_generator = SnippetGenerator::create(&searcher, &final_query, self.f_content)?;
 
-        // Group by session_id, keeping best score per session
-        let mut session_best: HashMap<String, SearchHit> = HashMap::new();
+        let mut results: Vec<SearchHit> = Vec::new();
 
         for (score, doc_address) in top_docs {
             let doc: TantivyDocument = searcher.doc(doc_address)?;
@@ -314,11 +299,6 @@ impl SearchIndex {
                 .to_string();
 
             if session_id.is_empty() {
-                continue;
-            }
-
-            let existing = session_best.get(&session_id);
-            if existing.is_some() && existing.unwrap().score >= score {
                 continue;
             }
 
@@ -347,21 +327,17 @@ impl SearchIndex {
             let snippet = snippet_generator.snippet_from_doc(&doc);
             let snippet_html = snippet.to_html();
 
-            session_best.insert(
-                session_id.clone(),
-                SearchHit {
-                    session_id,
-                    project,
-                    snippet: snippet_html,
-                    msg_type,
-                    timestamp,
-                    message_index,
-                    score,
-                },
-            );
+            results.push(SearchHit {
+                session_id,
+                project,
+                snippet: snippet_html,
+                msg_type,
+                timestamp,
+                message_index,
+                score,
+            });
         }
 
-        let mut results: Vec<SearchHit> = session_best.into_values().collect();
         results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         results.truncate(limit);
 

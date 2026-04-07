@@ -947,7 +947,8 @@ async function showDetail(sessionId) {
   headerEl.replaceChildren(headerRow, headerRow2);
 
   // Re-bind chat search events
-  chatSearchInput.addEventListener('input', doChatSearch);
+  let chatSearchTimer = null;
+  chatSearchInput.addEventListener('input', () => { clearTimeout(chatSearchTimer); chatSearchTimer = setTimeout(doChatSearch, 200); });
   nextBtn.addEventListener('click', chatSearchNext);
   prevBtn.addEventListener('click', chatSearchPrev);
   chatSearchInput.addEventListener('keydown', (e) => {
@@ -981,12 +982,13 @@ async function showDetail(sessionId) {
   });
 
   // Prepare message descriptors (lightweight) without rendering
+  // Keep original index for search hit correlation with Tantivy's message_index
   const msgDescs = [];
-  detail.messages.forEach(m => {
+  detail.messages.forEach((m, origIdx) => {
     const hasText = m.content && m.content !== '[Tool Result]' && !m.content.startsWith('[Tool:');
     const hasTools = m.tools && m.tools.length > 0;
     if (!hasText && !hasTools) return;
-    msgDescs.push({ msg: m, hasText, hasTools });
+    msgDescs.push({ msg: m, hasText, hasTools, origIdx });
   });
 
   // Render a single message descriptor into DOM elements
@@ -1031,7 +1033,7 @@ async function showDetail(sessionId) {
   // Immediate messages (bottom N)
   for (let i = deferredCount; i < msgDescs.length; i++) {
     const els = renderMsgDesc(msgDescs[i]);
-    els.forEach(el => { el.setAttribute('data-msg-idx', i); chatContainer.appendChild(el); });
+    els.forEach(el => { el.setAttribute('data-msg-idx', msgDescs[i].origIdx); chatContainer.appendChild(el); });
   }
 
   messagesEl.appendChild(chatContainer);
@@ -1050,7 +1052,7 @@ async function showDetail(sessionId) {
     const frag = document.createDocumentFragment();
     for (let i = 0; i < deferredCount; i++) {
       const els = renderMsgDesc(msgDescs[i]);
-      els.forEach(el => { el.setAttribute('data-msg-idx', i); frag.appendChild(el); });
+      els.forEach(el => { el.setAttribute('data-msg-idx', msgDescs[i].origIdx); frag.appendChild(el); });
     }
     const prevScrollTop = messagesEl.scrollTop;
     const prevScrollHeight = messagesEl.scrollHeight;
@@ -1072,7 +1074,7 @@ async function showDetail(sessionId) {
       const end = Math.min(chunkIdx + 10, deferredCount);
       while (chunkIdx < end) {
         const els = renderMsgDesc(msgDescs[chunkIdx]);
-        els.forEach(el => { el.setAttribute('data-msg-idx', chunkIdx); deferredFrag.appendChild(el); });
+        els.forEach(el => { el.setAttribute('data-msg-idx', msgDescs[chunkIdx].origIdx); deferredFrag.appendChild(el); });
         chunkIdx++;
         if (deadline && deadline.timeRemaining && deadline.timeRemaining() < 2) break;
       }
@@ -1514,14 +1516,14 @@ function renderSearchResults() {
   if (searchResults.length === 0) {
     const msg = createEl('div', { className: 'text-xs text-center py-8' });
     msg.style.color = 'var(--text-faint)';
-    msg.textContent = t('searchNoResults');
+    msg.textContent = searchIndexReady ? t('searchNoResults') : (lang === 'ja' ? 'インデックス構築中...' : 'Indexing...');
     el.appendChild(msg);
-    document.getElementById('sessionListTitle').textContent = t('searchNoResults');
+    document.getElementById('sessionListTitle').textContent = searchIndexReady ? t('searchNoResults') : (lang === 'ja' ? 'インデックス構築中...' : 'Indexing...');
     return;
   }
 
   document.getElementById('sessionListTitle').textContent =
-    t('searchResults').replace('{n}', searchResults.length);
+    t('searchResults').replace('{n}', searchResults.length) + (searchIndexReady ? '' : (lang === 'ja' ? ' (インデックス構築中...)' : ' (indexing...)'));
 
   // Group hits: project → session → hits[]
   const projMap = {};
@@ -1557,37 +1559,41 @@ function renderSearchResults() {
       const title = summary ? summary.firstDisplay : sessionId.slice(0, 8);
 
       // Session header row
-      const sessHeader = createEl('div', { className: 'px-3 pt-2 pb-1' });
-      const sessTitle = createEl('p', { className: 'text-sm leading-snug truncate', textContent: title });
+      const sessTitle = createEl('span', { className: 'text-sm leading-snug truncate', textContent: title });
       sessTitle.style.color = 'var(--text)';
-      const sessMeta = createEl('span', { className: 'text-[10px]', textContent: timeAgo(hits[0].timestamp) + ' · ' + hits.length + (hits.length === 1 ? ' hit' : ' hits') });
-      sessMeta.style.color = 'var(--text-faint)';
-      sessHeader.appendChild(sessTitle);
-      sessHeader.appendChild(sessMeta);
+      const sessHitCount = createEl('span', { className: 'text-[10px] flex-shrink-0', textContent: hits.length + (hits.length === 1 ? ' hit' : ' hits') });
+      sessHitCount.style.color = 'var(--text-faint)';
+      const sessHeader = createEl('div', { className: 'px-3 pt-2 pb-1' }, [sessTitle, sessHitCount]);
+      sessHeader.style.cssText = 'display:flex;align-items:baseline;gap:8px;justify-content:space-between;border-top:1px solid var(--border);margin-top:4px;padding-top:8px;';
       sessionsDiv.appendChild(sessHeader);
 
       // Individual hits as snippet items
       hits.forEach(hit => {
+        const isUser = hit.msgType === 'user';
         const snippetEl = createEl('div', { className: 'text-xs' });
-        snippetEl.style.cssText = 'color:var(--text-secondary);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;';
+        snippetEl.style.cssText = 'overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;';
         snippetEl.innerHTML = sanitizeSnippet(hit.snippet);
 
-        const item = createEl('div', { className: 'session-item px-3 py-1.5 rounded cursor-default border overflow-hidden' });
-        item.style.cssText = 'border-color:transparent;margin:0 4px;';
+        const item = createEl('div', {
+          className: (isUser ? 'bubble-user' : 'bubble-assistant') + ' px-3 py-1.5 cursor-default overflow-hidden'
+        });
+        item.style.cssText = 'margin:3px 4px;font-size:12px;max-width:none;' + (isUser ? 'margin-left:30px;' : 'margin-right:30px;');
         item.appendChild(snippetEl);
-        item.addEventListener('mouseenter', () => { item.style.background = 'var(--item-hover)'; });
-        item.addEventListener('mouseleave', () => { item.style.background = ''; });
+        item.addEventListener('mouseenter', () => { item.style.opacity = '0.8'; });
+        item.addEventListener('mouseleave', () => { item.style.opacity = ''; });
         item.addEventListener('click', () => {
           // Deselect previous
-          el.querySelectorAll('.session-item-active').forEach(prev => {
-            prev.classList.remove('session-item-active');
-            prev.style.borderColor = 'transparent';
-            prev.style.background = '';
+          el.querySelectorAll('.search-hit-active').forEach(prev => {
+            prev.classList.remove('search-hit-active');
+            prev.style.outline = '';
           });
-          item.classList.add('session-item-active');
-          item.style.borderColor = 'var(--accent)';
+          item.classList.add('search-hit-active');
+          item.style.outline = '2px solid var(--accent)';
           selectedSession = hit.sessionId;
           showDetail(hit.sessionId).then(() => {
+            const q = document.getElementById('search').value.trim();
+            const chatInput = document.getElementById('chatSearch');
+            if (q && chatInput) { chatInput.value = q; doChatSearch(); }
             scrollToMessageIndex(hit.messageIndex);
           });
         });
