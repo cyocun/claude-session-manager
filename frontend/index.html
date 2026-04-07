@@ -346,8 +346,11 @@
     <!-- Titlebar drag area -->
     <div data-tauri-drag-region class="titlebar-drag" style="height:38px;"></div>
     <!-- Search + new button -->
-    <div class="px-3 pb-2" style="display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;">
+    <div class="px-3 pb-2" style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;">
       <input id="search" type="text" class="mac-input px-3" style="height:28px;">
+      <button id="searchModeBtn" class="mac-btn" style="height:28px;padding:0 6px;font-size:11px;" title="Toggle search mode">
+        <svg id="searchModeIcon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+      </button>
       <button id="newSessionBtn" class="mac-btn" style="width:28px;height:28px;padding:0;" title="New Session">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 7.5h4.5m0 0H11m-4.5 0V3m0 4.5V12"/></svg>
       </button>
@@ -416,6 +419,12 @@ const I18N = {
     yesterday: '昨日',
     archiveProject: 'プロジェクトをアーカイブ',
     selectSession: 'セッションを選択してください',
+    searchContent: '内容検索',
+    filterMode: 'フィルタ',
+    searchResults: '{n}件の結果',
+    searchIndexing: 'インデックス作成中...',
+    searchNoResults: '結果なし',
+    searchMinChars: '2文字以上入力',
   },
   en: {
     searchPlaceholder: 'Search...',
@@ -447,6 +456,12 @@ const I18N = {
     yesterday: 'Yesterday',
     archiveProject: 'Archive project',
     selectSession: 'Select a session',
+    searchContent: 'Search Content',
+    filterMode: 'Filter',
+    searchResults: '{n} results',
+    searchIndexing: 'Indexing...',
+    searchNoResults: 'No results',
+    searchMinChars: 'Type 2+ chars',
   }
 };
 
@@ -518,6 +533,11 @@ let showAllSessions = new Set();
 let openedAt = Date.now();
 let knownTimestamps = {}; // sessionId -> lastTimestamp at first load
 let isFirstLoad = true;
+let searchMode = 'filter'; // 'filter' | 'fulltext'
+let searchResults = [];
+let isSearching = false;
+let searchIndexReady = false;
+let fulltextSearchTimer = null;
 
 function createEl(tag, attrs = {}, children = []) {
   const el = document.createElement(tag);
@@ -1377,6 +1397,143 @@ function smoothScrollTo(el) {
 function chatSearchNext() { if (!chatHits.length) return; chatHitIndex = (chatHitIndex + 1) % chatHits.length; activateChatHit(); }
 function chatSearchPrev() { if (!chatHits.length) return; chatHitIndex = (chatHitIndex - 1 + chatHits.length) % chatHits.length; activateChatHit(); }
 
+// --- Full-text search ---
+
+function toggleSearchMode() {
+  searchMode = searchMode === 'filter' ? 'fulltext' : 'filter';
+  const btn = document.getElementById('searchModeBtn');
+  const search = document.getElementById('search');
+  if (searchMode === 'fulltext') {
+    btn.style.background = 'var(--accent)';
+    btn.style.color = '#fff';
+    btn.title = t('filterMode');
+    search.placeholder = t('searchContent');
+  } else {
+    btn.style.background = '';
+    btn.style.color = '';
+    btn.title = t('searchContent');
+    search.placeholder = t('searchPlaceholder');
+    searchResults = [];
+    renderSessions();
+  }
+  // Re-trigger search with current query
+  const q = search.value.trim();
+  if (q && searchMode === 'fulltext') {
+    performFullTextSearch(q);
+  }
+}
+
+async function performFullTextSearch(query) {
+  if (!query || query.length < 2) {
+    searchResults = [];
+    renderSessions();
+    return;
+  }
+  isSearching = true;
+  renderSearchLoading();
+  searchResults = await invoke('search_sessions', {
+    query, project: selectedProject || null, limit: 50
+  }) || [];
+  isSearching = false;
+  renderSearchResults();
+}
+
+function renderSearchLoading() {
+  const el = document.getElementById('sessionList');
+  el.replaceChildren();
+  const msg = createEl('div', { className: 'text-xs text-center py-8' });
+  msg.style.color = 'var(--text-faint)';
+  msg.textContent = t('searchIndexing');
+  el.appendChild(msg);
+}
+
+function renderSearchResults() {
+  const el = document.getElementById('sessionList');
+  el.replaceChildren();
+
+  if (searchResults.length === 0) {
+    const msg = createEl('div', { className: 'text-xs text-center py-8' });
+    msg.style.color = 'var(--text-faint)';
+    msg.textContent = t('searchNoResults');
+    el.appendChild(msg);
+    document.getElementById('sessionListTitle').textContent = t('searchNoResults');
+    return;
+  }
+
+  document.getElementById('sessionListTitle').textContent =
+    t('searchResults').replace('{n}', searchResults.length);
+
+  searchResults.forEach(hit => {
+    const sessionSummary = sessions.find(s => s.sessionId === hit.sessionId);
+    const title = sessionSummary ? sessionSummary.firstDisplay : hit.sessionId.slice(0, 8);
+    const projName = projectDisplayName(hit.project);
+
+    const titleEl = createEl('div', { className: 'text-sm font-medium truncate' });
+    titleEl.style.color = 'var(--text-primary)';
+    titleEl.textContent = title;
+
+    const projEl = createEl('div', { className: 'text-[10px] truncate' });
+    projEl.style.color = 'var(--text-muted)';
+    projEl.textContent = projName;
+
+    const snippetEl = createEl('div', { className: 'text-xs mt-1 line-clamp-2' });
+    snippetEl.style.cssText = 'color:var(--text-secondary);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;';
+    // Sanitize snippet — only allow <mark> tags
+    const cleaned = hit.snippet
+      .replace(/<(?!\/?b>)/g, '&lt;')
+      .replace(/<b>/g, '<mark style="background:var(--hit-bg);color:inherit;border-radius:2px;padding:0 1px;">')
+      .replace(/<\/b>/g, '</mark>');
+    snippetEl.innerHTML = cleaned;
+
+    const metaEl = createEl('div', { className: 'text-[10px] mt-1' });
+    metaEl.style.color = 'var(--text-faint)';
+    metaEl.textContent = timeAgo(hit.timestamp);
+
+    const item = createEl('div', {
+      className: 'session-item p-3 rounded cursor-default border overflow-hidden',
+    }, [titleEl, projEl, snippetEl, metaEl]);
+    item.style.cssText = 'border-color:transparent;';
+    item.addEventListener('mouseenter', () => { item.style.background = 'var(--item-hover)'; });
+    item.addEventListener('mouseleave', () => { item.style.background = ''; });
+    item.addEventListener('click', () => {
+      selectedSession = hit.sessionId;
+      showDetail(hit.sessionId).then(() => {
+        scrollToMessageIndex(hit.messageIndex);
+      });
+    });
+
+    el.appendChild(item);
+  });
+}
+
+function scrollToMessageIndex(messageIndex) {
+  const messagesEl = document.getElementById('detailMessages');
+  // Look for placeholder with data-idx matching messageIndex
+  const placeholder = messagesEl.querySelector(`[data-idx="${messageIndex}"]`);
+  if (placeholder) {
+    placeholder.scrollIntoView({ block: 'center' });
+    // Wait for IntersectionObserver to render, then scroll again
+    setTimeout(() => {
+      const rendered = messagesEl.querySelectorAll('.chat-bubble');
+      if (rendered.length > messageIndex) {
+        rendered[messageIndex].scrollIntoView({ block: 'center' });
+        rendered[messageIndex].style.outline = '2px solid var(--accent)';
+        rendered[messageIndex].style.outlineOffset = '2px';
+        setTimeout(() => { rendered[messageIndex].style.outline = ''; rendered[messageIndex].style.outlineOffset = ''; }, 2000);
+      }
+    }, 300);
+    return;
+  }
+  // If no placeholder, try rendered bubbles directly
+  const bubbles = messagesEl.querySelectorAll('.chat-bubble');
+  if (bubbles.length > messageIndex) {
+    bubbles[messageIndex].scrollIntoView({ block: 'center' });
+    bubbles[messageIndex].style.outline = '2px solid var(--accent)';
+    bubbles[messageIndex].style.outlineOffset = '2px';
+    setTimeout(() => { bubbles[messageIndex].style.outline = ''; bubbles[messageIndex].style.outlineOffset = ''; }, 2000);
+  }
+}
+
 // --- Resize handle ---
 
 (function() {
@@ -1412,9 +1569,17 @@ function chatSearchPrev() { if (!chatHits.length) return; chatHitIndex = (chatHi
 
 let searchTimer = null;
 document.getElementById('search').addEventListener('input', () => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(renderSessions, 150);
+  if (searchMode === 'fulltext') {
+    clearTimeout(fulltextSearchTimer);
+    fulltextSearchTimer = setTimeout(() => {
+      performFullTextSearch(document.getElementById('search').value.trim());
+    }, 300);
+  } else {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(renderSessions, 150);
+  }
 });
+document.getElementById('searchModeBtn').addEventListener('click', toggleSearchMode);
 document.getElementById('archiveSelectedBtn').addEventListener('click', archiveSelected);
 document.getElementById('newSessionBtn').addEventListener('click', async () => {
   const result = await invoke('start_new_session');
@@ -1433,6 +1598,11 @@ if (_isTauri && window.__TAURI__.event) {
   });
   listen('menu-lang', (e) => {
     lang = e.payload; localStorage.setItem('csm-lang', lang); applyI18n(); renderSessions();
+  });
+  listen('search-index-ready', () => {
+    searchIndexReady = true;
+    const indicator = document.getElementById('searchIndexIndicator');
+    if (indicator) indicator.remove();
   });
   listen('menu-show-archived', (e) => {
     document.getElementById('showArchived').checked = e.payload;
@@ -1540,8 +1710,19 @@ Promise.all([fetchSessions(), fetchProjects(), fetchSettings()]).then(() => {
 });
 
 // Auto-refresh every 30s to detect updated sessions
-setInterval(() => {
-  fetchSessions(document.getElementById('showArchived').checked);
+setInterval(async () => {
+  const oldSessions = sessions.slice();
+  await fetchSessions(document.getElementById('showArchived').checked);
+  // Incremental search index update for changed sessions
+  const updatedIds = sessions
+    .filter(s => {
+      const old = oldSessions.find(o => o.sessionId === s.sessionId);
+      return !old || old.lastTimestamp !== s.lastTimestamp;
+    })
+    .map(s => s.sessionId);
+  if (updatedIds.length > 0) {
+    invoke('update_search_index', { sessionIds: updatedIds });
+  }
 }, 30000);
 </script>
 </body>

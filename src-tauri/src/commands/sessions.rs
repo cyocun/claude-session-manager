@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use walkdir::WalkDir;
 
-fn claude_dir() -> std::path::PathBuf {
+pub fn claude_dir() -> std::path::PathBuf {
     dirs::home_dir().unwrap().join(".claude")
 }
 
@@ -46,7 +46,7 @@ pub fn archive_path() -> std::path::PathBuf {
     app_data.join("archive.json")
 }
 
-fn find_session_file(session_id: &str) -> Option<std::path::PathBuf> {
+pub fn find_session_file(session_id: &str) -> Option<std::path::PathBuf> {
     let projects_dir = claude_dir().join("projects");
     let target = format!("{}.jsonl", session_id);
     for entry in WalkDir::new(&projects_dir).into_iter().filter_map(|e| e.ok()) {
