@@ -1,9 +1,6 @@
-type SelectedIdsAccessor = () => Set<string>;
+import type { SessionSummary } from './types.js';
 
-type SessionSummary = {
-  sessionId: string;
-  project: string;
-};
+type SelectedIdsAccessor = () => Set<string>;
 
 export type SessionActionsDeps = {
   byId: (id: string) => any;

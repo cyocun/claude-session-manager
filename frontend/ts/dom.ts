@@ -16,3 +16,11 @@ export function createEl(
   }
   return el;
 }
+
+export function getById<T extends HTMLElement = HTMLElement>(id: string): T {
+  const el = document.getElementById(id);
+  if (!el) {
+    throw new Error(`Element not found: #${id}`);
+  }
+  return el as T;
+}

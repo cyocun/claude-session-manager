@@ -18,3 +18,10 @@ export function createEl(tag, attrs = {}, children = []) {
     }
     return el;
 }
+export function getById(id) {
+    const el = document.getElementById(id);
+    if (!el) {
+        throw new Error(`Element not found: #${id}`);
+    }
+    return el;
+}
