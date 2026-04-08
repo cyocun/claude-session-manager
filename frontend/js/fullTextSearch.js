@@ -110,6 +110,10 @@ export function createFullTextSearchController(deps) {
         byId('sessionListTitle').textContent =
             t('searchResults').replace('{n}', String(searchResults.length)) +
                 (searchIndexReady ? '' : (lang === 'ja' ? ' (インデックス構築中...)' : ' (indexing...)'));
+        const sessionTitleMap = new Map();
+        getSessions().forEach((summary) => {
+            sessionTitleMap.set(summary.sessionId, summary.firstDisplay);
+        });
         const projMap = {};
         const projOrder = [];
         searchResults.forEach((hit) => {
@@ -148,8 +152,7 @@ export function createFullTextSearchController(deps) {
             sessionsDiv.className = 'project-group-sessions open';
             Object.keys(sessMap).forEach((sessionId) => {
                 const hits = sessMap[sessionId];
-                const summary = getSessions().find((s) => s.sessionId === sessionId);
-                const title = summary ? summary.firstDisplay : sessionId.slice(0, 8);
+                const title = sessionTitleMap.get(sessionId) || sessionId.slice(0, 8);
                 const sessTitle = document.createElement('span');
                 sessTitle.className = 'text-sm leading-snug truncate';
                 sessTitle.textContent = title;
