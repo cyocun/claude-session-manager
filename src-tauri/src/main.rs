@@ -44,7 +44,12 @@ fn clear_webview_cache() {
 }
 
 fn main() {
-    clear_webview_cache();
+    let should_clear_cache = std::env::var("CSM_CLEAR_WEBVIEW_CACHE")
+        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false);
+    if should_clear_cache {
+        clear_webview_cache();
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
@@ -63,6 +68,7 @@ fn main() {
             resume::resume_session,
             resume::start_new_session,
             resume::start_new_session_in_project,
+            resume::open_project_in_terminal,
             resume::open_usage_stats,
             resume::get_resume_command,
             resume::get_session_status,

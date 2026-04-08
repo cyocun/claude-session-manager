@@ -283,6 +283,36 @@ pub fn start_new_session_in_project(project: String) -> ResumeResult {
 }
 
 #[tauri::command]
+pub fn open_project_in_terminal(project: String) -> ResumeResult {
+    let project = project.trim();
+    if project.is_empty() {
+        return ResumeResult {
+            ok: false,
+            method: String::new(),
+            pid: None,
+            error: Some("Project path is empty".to_string()),
+        };
+    }
+    if !std::path::Path::new(project).is_dir() {
+        return ResumeResult {
+            ok: false,
+            method: String::new(),
+            pid: None,
+            error: Some("Project directory not found".to_string()),
+        };
+    }
+
+    let settings = super::settings::get_settings();
+    let terminal_app = normalize_terminal_app(&settings.terminal_app);
+    let cmd = format!("cd '{}'", shell_single_quote_escape(project));
+
+    match launch_in_terminal(terminal_app, &cmd) {
+        Ok(method) => ResumeResult { ok: true, method, pid: None, error: None },
+        Err(e) => ResumeResult { ok: false, method: String::new(), pid: None, error: Some(e) },
+    }
+}
+
+#[tauri::command]
 pub fn open_usage_stats() -> ResumeResult {
     let settings = super::settings::get_settings();
     let terminal_app = normalize_terminal_app(&settings.terminal_app);

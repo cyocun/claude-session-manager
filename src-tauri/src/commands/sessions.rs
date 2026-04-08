@@ -3,7 +3,10 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::sync::{OnceLock, RwLock};
 use walkdir::WalkDir;
+
+static SESSION_FILE_CACHE: OnceLock<RwLock<HashMap<String, std::path::PathBuf>>> = OnceLock::new();
 
 pub fn claude_dir() -> std::path::PathBuf {
     if let Ok(dir) = std::env::var("CLAUDE_DATA_DIR") {
@@ -14,7 +17,7 @@ pub fn claude_dir() -> std::path::PathBuf {
         .join(".claude")
 }
 
-fn history_file() -> std::path::PathBuf {
+pub fn history_file() -> std::path::PathBuf {
     claude_dir().join("history.jsonl")
 }
 
@@ -53,12 +56,32 @@ pub fn archive_path() -> std::path::PathBuf {
 
 pub fn find_session_file(session_id: &str) -> Option<std::path::PathBuf> {
     let projects_dir = claude_dir().join("projects");
-    let target = format!("{}.jsonl", session_id);
-    for entry in WalkDir::new(&projects_dir).into_iter().filter_map(|e| e.ok()) {
-        if entry.file_name().to_string_lossy() == target {
-            return Some(entry.into_path());
+    let cache = SESSION_FILE_CACHE.get_or_init(|| RwLock::new(HashMap::new()));
+
+    if let Some(path) = cache.read().ok().and_then(|c| c.get(session_id).cloned()) {
+        if path.exists() {
+            return Some(path);
         }
     }
+
+    let mut discovered: HashMap<String, std::path::PathBuf> = HashMap::new();
+    for entry in WalkDir::new(&projects_dir).into_iter().filter_map(|e| e.ok()) {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let file_name = entry.file_name().to_string_lossy();
+        if let Some(session_name) = file_name.strip_suffix(".jsonl") {
+            discovered.insert(session_name.to_string(), entry.into_path());
+        }
+    }
+
+    if let Ok(mut c) = cache.write() {
+        c.extend(discovered);
+        if let Some(path) = c.get(session_id).cloned() {
+            return Some(path);
+        }
+    }
+
     None
 }
 
