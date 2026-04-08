@@ -6,6 +6,8 @@ type SearchHit = {
   messageIndex: number;
 };
 
+type SearchMode = 'fulltext' | 'similar';
+
 export type FullTextSearchDeps = {
   byId: (id: string) => any;
   t: (key: string) => string;
@@ -35,13 +37,20 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     chatSearch,
   } = deps;
 
-  let searchMode: 'filter' | 'fulltext' | 'similar' = 'fulltext';
+  let searchMode: SearchMode = 'fulltext';
   let searchResults: SearchHit[] = [];
+  let activeQuery = '';
+  let activeSearchMode: SearchMode = 'fulltext';
   let searchIndexReady = false;
   let fulltextSearchTimer: ReturnType<typeof setTimeout> | null = null;
+  let searchRequestSeq = 0;
 
-  function getMode(): 'filter' | 'fulltext' | 'similar' {
+  function getMode(): SearchMode {
     return searchMode;
+  }
+
+  function isSearchActive(): boolean {
+    return activeQuery.length >= 2;
   }
 
   function setIndexReady(ready: boolean): void {
@@ -52,37 +61,43 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     searchMode = searchMode === 'fulltext' ? 'similar' : 'fulltext';
     const search = byId('search') as HTMLInputElement;
     search.placeholder = searchMode === 'similar' ? t('searchSimilar') : t('searchContent');
-    const q = search.value.trim();
-    if (q) {
-      void perform(q);
-    }
+    void perform(search.value);
   }
 
   function onSearchInput(): void {
     const search = byId('search') as HTMLInputElement;
-    if (searchMode === 'fulltext' || searchMode === 'similar') {
-      if (fulltextSearchTimer) clearTimeout(fulltextSearchTimer);
-      fulltextSearchTimer = setTimeout(() => {
-        void perform(search.value.trim());
-      }, 300);
-    } else {
-      renderSessions();
-    }
+    if (fulltextSearchTimer) clearTimeout(fulltextSearchTimer);
+    fulltextSearchTimer = setTimeout(() => {
+      void perform(search.value);
+    }, 300);
   }
 
   async function perform(query: string): Promise<void> {
-    if (!query || query.length < 2) {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery || trimmedQuery.length < 2) {
+      activeQuery = '';
       searchResults = [];
       renderSessions();
       return;
     }
+
+    const requestMode = searchMode;
+    const requestSeq = ++searchRequestSeq;
+    activeQuery = trimmedQuery;
+    activeSearchMode = requestMode;
+
     renderLoading();
-    searchResults = await invoke('search_sessions', {
-      query,
+    const results = await invoke('search_sessions', {
+      query: trimmedQuery,
       project: getSelectedProject() || null,
-      limit: searchMode === 'similar' ? 80 : 50,
+      limit: requestMode === 'similar' ? 80 : 50,
     }) || [];
-    renderResults();
+
+    if (requestSeq !== searchRequestSeq) return;
+    if (activeQuery !== trimmedQuery) return;
+
+    searchResults = results;
+    renderResults(requestMode);
   }
 
   async function fetchContextSnippet(hit: SearchHit): Promise<{ before: string; current: string; after: string; likely: string } | null> {
@@ -122,7 +137,7 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     return DOMPurify.sanitize(sanitized, { ALLOWED_TAGS: ['mark'], ALLOWED_ATTR: ['style'] });
   }
 
-  function renderResults(): void {
+  function renderResults(mode: SearchMode = activeSearchMode): void {
     const el = byId('sessionList');
     el.replaceChildren();
     const lang = getLang();
@@ -132,11 +147,11 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
       msg.className = 'text-xs text-center py-8';
       msg.style.color = 'var(--text-faint)';
       msg.textContent = searchIndexReady
-        ? (searchMode === 'similar' ? t('similarNoResults') : t('searchNoResults'))
+        ? (mode === 'similar' ? t('similarNoResults') : t('searchNoResults'))
         : (lang === 'ja' ? 'インデックス構築中...' : 'Indexing...');
       el.appendChild(msg);
       byId('sessionListTitle').textContent = searchIndexReady
-        ? (searchMode === 'similar' ? t('similarNoResults') : t('searchNoResults'))
+        ? (mode === 'similar' ? t('similarNoResults') : t('searchNoResults'))
         : (lang === 'ja' ? 'インデックス構築中...' : 'Indexing...');
       return;
     }
@@ -229,7 +244,7 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
           item.appendChild(contextEl);
           item.addEventListener('mouseenter', () => { item.style.opacity = '0.8'; });
           item.addEventListener('mouseleave', () => { item.style.opacity = ''; });
-          if (searchMode === 'similar') {
+          if (mode === 'similar') {
             contextEl.style.display = 'block';
             contextEl.textContent = t('loadingContext');
             void fetchContextSnippet(hit).then((ctx) => {
@@ -279,6 +294,7 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
 
   return {
     getMode,
+    isSearchActive,
     setIndexReady,
     toggleMode,
     onSearchInput,
