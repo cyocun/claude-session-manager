@@ -11,7 +11,7 @@ export function initResizeHandle(byId) {
     document.addEventListener('mousemove', (e) => {
         if (!dragging)
             return;
-        const clamped = Math.max(220, Math.min(500, e.clientX));
+        const clamped = Math.max(200, Math.min(500, e.clientX));
         document.body.style.gridTemplateColumns = `${clamped}px 1px 1fr`;
     });
     document.addEventListener('mouseup', () => {

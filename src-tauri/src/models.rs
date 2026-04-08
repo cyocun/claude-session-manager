@@ -314,15 +314,6 @@ pub struct ProjectInfo {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct ProjectSummary {
-    pub project: String,
-    pub session_count: u32,
-    pub generated_at: u64,
-    pub summary: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct Settings {
     #[serde(default = "default_terminal")]
     pub terminal_app: String,
@@ -477,19 +468,3 @@ pub struct WordFreqEntry {
     pub count: u64,
 }
 
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectDecisionItem {
-    pub project: String,
-    pub session_id: String,
-    pub timestamp: u64,
-    pub kind: String,
-    pub text: String,
-}
-
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectDecisionHistory {
-    pub project: String,
-    pub items: Vec<ProjectDecisionItem>,
-}

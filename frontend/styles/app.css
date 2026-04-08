@@ -231,7 +231,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
     .project-group { margin-bottom: 4px; border-top: 1px solid var(--border); padding-top: 6px; }
     .project-group:first-child { border-top: none; padding-top: 0; }
     .project-group-header {
-      display: grid; grid-template-columns: auto auto 1fr auto auto auto; align-items: center; gap: 6px; padding: 8px 8px; cursor: default;
+      display: grid; grid-template-columns: auto auto 1fr auto auto; align-items: center; gap: 6px; padding: 8px 8px; cursor: default;
       user-select: none; border-radius: 6px; transition: background 0.1s;
       position: sticky; top: 0; z-index: 10; background: var(--bg);
     }
@@ -247,15 +247,6 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
       display: inline-flex; align-items: center; justify-content: center;
       transition: background 0.1s;
     }
-    .project-summary-btn {
-      width: 20px; height: 20px; padding: 0;
-      border-radius: 999px; border: 1px solid var(--border);
-      background: var(--btn2-bg); color: var(--text-muted);
-      font-size: 12px; line-height: 1; cursor: default;
-      display: inline-flex; align-items: center; justify-content: center;
-      transition: background 0.1s;
-    }
-    .project-summary-btn:hover { background: var(--btn2-bg-hover); }
     .project-start-btn:hover { background: var(--btn2-bg-hover); }
     .project-group-sessions { display: none; padding-left: 4px; }
     .project-group-sessions.open { display: block; }
@@ -266,22 +257,6 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
     }
     .show-older-pill:hover { background: var(--btn-bg-hover); }
 
-    .project-summary-modal {
-      position: fixed; inset: 0; z-index: 300;
-      display: grid; place-items: center;
-      background: var(--modal-overlay);
-    }
-    .project-summary-dialog {
-      width: min(860px, 92vw); max-height: 82vh;
-      background: var(--modal-bg); color: var(--text);
-      border: 1px solid var(--modal-border); border-radius: 10px;
-      box-shadow: 0 16px 48px rgba(0,0,0,0.28);
-      display: grid; grid-template-rows: auto 1fr;
-    }
-    .project-summary-header {
-      display: flex; flex-wrap: wrap; gap: 8px;
-      align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--border);
-    }
     .token-header {
       padding: 10px 12px; border-bottom: 1px solid var(--border);
       display: grid; gap: 6px;
@@ -297,10 +272,6 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
       flex-shrink: 0; transition: background 0.15s;
     }
     .token-close-btn:hover { background: var(--btn-bg-hover); color: var(--text); }
-    .project-summary-body {
-      overflow: auto; padding: 14px; white-space: pre-wrap;
-      line-height: 1.6; font-size: 13px;
-    }
     .token-grid {
       display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 8px; margin-bottom: 12px;
@@ -447,21 +418,6 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
     .token-limit-over .token-limit-bar-fill {
       background: #ef4444;
     }
-    .decision-list { display: grid; gap: 8px; }
-    .decision-item {
-      border: 1px solid var(--border); border-radius: 8px;
-      background: var(--bg-surface); padding: 8px 10px;
-      display: grid; gap: 5px;
-    }
-    .decision-meta {
-      display: grid; grid-template-columns: auto auto 1fr auto; gap: 7px; align-items: center;
-      font-size: 11px; color: var(--text-faint);
-    }
-    .decision-kind {
-      border: 1px solid var(--border); border-radius: 999px; padding: 1px 7px;
-      color: var(--text-muted); background: var(--btn2-bg);
-    }
-    .decision-text { font-size: 12px; color: var(--text); line-height: 1.55; }
 
     /* Hover preview popover for quick session glance. */
     .session-preview {

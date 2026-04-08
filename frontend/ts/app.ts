@@ -35,7 +35,6 @@ type ProjectGroup = { path: string; sessions: SessionSummary[] };
 type DetailMessage = { type: string; content?: string; tools?: any[] };
 type SessionDetail = { project: string; messages: DetailMessage[] };
 type MsgDesc = { msg: DetailMessage; hasText: boolean; hasTools: boolean; origIdx: number };
-type ProjectSummary = { project: string; sessionCount: number; generatedAt: number; summary: string };
 type TokenTotals = {
   inputTokens: number;
   outputTokens: number;
@@ -99,8 +98,6 @@ type TokenDashboard = {
   wordFreq: WordFreqEntry[];
 };
 type TokenTrendPeriod = 'hour' | 'day' | 'week' | 'month';
-type DecisionItem = { project: string; sessionId: string; timestamp: number; kind: string; text: string };
-type DecisionHistory = { project: string; items: DecisionItem[] };
 
 let lang = detectLang();
 function t(key: string): string { return translate(lang, key); }
@@ -158,7 +155,6 @@ let knownTimestamps: Record<string, number> = {}; // sessionId -> lastTimestamp 
 let isFirstLoad = true;
 let allMessagesRendered = true;
 let renderAbort: { aborted: boolean } | null = null;
-let projectSummaryModal: HTMLElement | null = null;
 let tokenModal: HTMLElement | null = null;
 let isPreviewHotkeyPressed = false;
 // Search controllers are pure modules; app.ts wires them to current state/getters.
@@ -369,7 +365,7 @@ function showStartupView() {
   const headerEl = byId('detailHeader');
   const footerEl = byId('detailFooter');
 
-  document.body.style.gridTemplateColumns = '300px 1px 1fr';
+  document.body.style.gridTemplateColumns = '280px 1px 1fr';
   if (isTauri) {
     tauriWindow.window.getCurrentWindow().setMinSize(new tauriWindow.window.LogicalSize(700, 500));
   }
@@ -1252,113 +1248,6 @@ async function openTokenModal(): Promise<void> {
   void renderData();
 }
 
-function closeProjectSummaryModal() {
-  if (!projectSummaryModal) return;
-  projectSummaryModal.remove();
-  projectSummaryModal = null;
-}
-
-async function openProjectSummaryModal(projectPath: string): Promise<void> {
-  closeProjectSummaryModal();
-
-  const modal = createEl('div', {
-    className: 'project-summary-modal',
-    onClick: (e: Event) => {
-      if (e.target === modal) closeProjectSummaryModal();
-    }
-  });
-  const title = createEl('div', { className: 'text-sm font-medium truncate', textContent: projectDisplayName(projectPath) + ' — ' + t('projectSummary') });
-  title.style.color = 'var(--text-secondary)';
-  const status = createEl('span', { className: 'text-xs', textContent: '' });
-  status.style.color = 'var(--text-faint)';
-  const generateBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('generateSummary') });
-  const historyBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('decisionHistory') });
-  const closeBtn = createEl('button', { className: 'mac-btn text-xs', textContent: 'Close' });
-  const body = createEl('div', { className: 'project-summary-body', textContent: t('summaryGenerating') });
-  const header = createEl('div', { className: 'project-summary-header' }, [title, status, generateBtn, historyBtn, closeBtn]);
-  const dialog = createEl('div', { className: 'project-summary-dialog' }, [header, body]);
-  modal.appendChild(dialog);
-  document.body.appendChild(modal);
-  projectSummaryModal = modal;
-  (modal as HTMLElement).tabIndex = -1;
-  (modal as HTMLElement).focus();
-
-  closeBtn.addEventListener('click', () => closeProjectSummaryModal());
-  modal.addEventListener('keydown', (e: KeyboardEvent) => {
-    if (e.key === 'Escape') closeProjectSummaryModal();
-  });
-
-  const renderSummary = (item: ProjectSummary | null) => {
-    if (!item?.summary) {
-      body.textContent = t('summaryNoData');
-      status.textContent = '';
-      generateBtn.textContent = t('generateSummary');
-      return;
-    }
-    const date = item.generatedAt ? new Date(item.generatedAt * 1000).toLocaleString(lang === 'ja' ? 'ja-JP' : 'en-US') : '';
-    status.textContent = date;
-    body.textContent = item.summary;
-    generateBtn.textContent = t('refreshSummary');
-  };
-
-  let generating = false;
-  async function generateSummary() {
-    if (generating) return;
-    generating = true;
-    generateBtn.setAttribute('disabled', 'true');
-    status.textContent = t('summaryGenerating');
-    try {
-      const item = await invoke('generate_project_summary', { project: projectPath });
-      if (!item) {
-        actions.showToast(t('toastError'));
-      } else {
-        renderSummary(item as ProjectSummary);
-      }
-    } finally {
-      generating = false;
-      generateBtn.removeAttribute('disabled');
-    }
-  }
-
-  generateBtn.addEventListener('click', () => { void generateSummary(); });
-  historyBtn.addEventListener('click', async () => {
-    body.replaceChildren(createEl('div', { textContent: t('loading') }));
-    const data = await invoke('get_project_decision_history', { project: projectPath }) as DecisionHistory | null;
-    if (!data || !data.items || data.items.length === 0) {
-      body.replaceChildren(createEl('div', { className: 'text-xs', textContent: t('decisionNoData') }));
-      return;
-    }
-    const list = createEl('div', { className: 'decision-list' });
-    const kindLabel = (k: string) => {
-      if (k === 'policy') return t('decisionKindPolicy');
-      if (k === 'adopt') return t('decisionKindAdopt');
-      if (k === 'reject') return t('decisionKindReject');
-      if (k === 'priority') return t('decisionKindPriority');
-      return k;
-    };
-    data.items.slice(0, 120).forEach((it) => {
-      const dt = it.timestamp ? new Date(it.timestamp).toLocaleString(lang === 'ja' ? 'ja-JP' : 'en-US') : '';
-      const meta = createEl('div', { className: 'decision-meta' }, [
-        createEl('span', { className: 'decision-kind', textContent: kindLabel(it.kind) }),
-        createEl('span', { textContent: it.sessionId.slice(0, 8) }),
-        createEl('span'),
-        createEl('span', { textContent: dt }),
-      ]);
-      const text = createEl('div', { className: 'decision-text', textContent: it.text });
-      const row = createEl('div', { className: 'decision-item' }, [meta, text]);
-      row.addEventListener('click', () => {
-        closeProjectSummaryModal();
-        selectedSession = it.sessionId;
-        void showDetail(it.sessionId);
-      });
-      list.appendChild(row);
-    });
-    body.replaceChildren(list);
-  });
-
-  const cached = await invoke('get_project_summary', { project: projectPath });
-  renderSummary((cached || null) as ProjectSummary | null);
-}
 
 function renderSessionItem(s: SessionSummary): HTMLElement {
   const cb = createEl('input', {
@@ -1497,7 +1386,7 @@ function renderSessions() {
     const name = createEl('span', { className: 'text-xs font-medium flex-1 truncate', textContent: projectDisplayName(g.path) });
     name.style.color = 'var(--text-secondary)';
     const count = createEl('span', { className: 'text-[10px] flex-shrink-0', textContent: g.sessions.length + '' });
-    count.style.color = 'var(--text-muted)';
+    count.style.cssText = 'color:var(--text-muted);min-width:24px;text-align:right;';
     const startBtn = createEl('button', {
       className: 'project-start-btn',
       textContent: '+',
@@ -1508,19 +1397,9 @@ function renderSessions() {
         if (!result?.ok) actions.showToast(t('toastError') + (result?.error || ''));
       }
     });
-    const summaryBtn = createEl('button', {
-      className: 'project-summary-btn',
-      textContent: '\u2261',
-      title: t('projectSummary'),
-      onClick: (e: Event) => {
-        e.stopPropagation();
-        void openProjectSummaryModal(g.path);
-      }
-    });
-
     const icon = createEl('span', { className: 'project-group-icon' });
     icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5A1.5 1.5 0 013.5 3H6l1.5 2h5A1.5 1.5 0 0114 6.5v5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5z"/></svg>';
-    const header = createEl('div', { className: 'project-group-header' }, [chevron, icon, name, summaryBtn, startBtn, count]);
+    const header = createEl('div', { className: 'project-group-header' }, [chevron, icon, name, startBtn, count]);
     if (projectNameMap[g.path]) header.title = shortPath(g.path);
 
     // Split sessions into recent (7 days) and older
@@ -1590,7 +1469,7 @@ async function showDetail(sessionId: string) {
   const messagesEl = byId('detailMessages');
 
   // Switch to 3-column layout & enforce wider min width
-  document.body.style.gridTemplateColumns = '300px 1px 1fr';
+  document.body.style.gridTemplateColumns = '280px 1px 1fr';
   if (isTauri) {
     tauriWindow.window.getCurrentWindow().setMinSize(new tauriWindow.window.LogicalSize(700, 500));
   }
