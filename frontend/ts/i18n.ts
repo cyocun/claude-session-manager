@@ -87,6 +87,8 @@ export const I18N = {
     toastSummarizing: 'ターミナルで要約を生成中...',
     readme: 'README',
     readmeNotFound: 'READMEが見つかりません',
+    openProjectTerminal: 'ターミナルで開く',
+    openProjectFinder: 'Finderで開く',
   },
   en: {
     searchPlaceholder: 'Search...',
@@ -176,6 +178,8 @@ export const I18N = {
     toastSummarizing: 'Generating summary in terminal...',
     readme: 'README',
     readmeNotFound: 'README not found',
+    openProjectTerminal: 'Open in Terminal',
+    openProjectFinder: 'Open in Finder',
   },
 } as const;
 
