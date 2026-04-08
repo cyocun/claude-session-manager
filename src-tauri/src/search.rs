@@ -6,16 +6,18 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::{atomic::{AtomicBool, Ordering}, Mutex, RwLock};
 use tantivy::collector::TopDocs;
-use tantivy::query::{BooleanQuery, Occur, QueryParser, TermQuery};
+use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, QueryParser, TermQuery};
 use tantivy::schema::*;
 use tantivy::snippet::SnippetGenerator;
 use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument};
 
-use crate::commands::sessions::{claude_dir, find_session_file};
+use crate::commands::sessions::{find_session_file, history_file};
 use crate::models::{normalize_message_text, HistoryEntry, RawHistoryEntry, SearchHit, SearchIndexStatus};
 
-const MAX_CONTENT_BYTES: usize = 50 * 1024; // 50KB per document
+const MAX_CONTENT_CHARS: usize = 50 * 1024; // 50K chars per document
 const WRITER_HEAP_SIZE: usize = 50 * 1024 * 1024; // 50MB
+const INDEX_VERSION: u32 = 3; // Bump when schema/tokenizer changes to force reindex
+const TOKENIZER_NAME: &str = "lindera_ipadic";
 
 pub struct SearchIndex {
     index: Index,
@@ -33,6 +35,16 @@ pub struct SearchIndex {
     pub total_sessions: Mutex<u32>,
 }
 
+struct IndexingFlagGuard<'a> {
+    flag: &'a AtomicBool,
+}
+
+impl Drop for IndexingFlagGuard<'_> {
+    fn drop(&mut self) {
+        self.flag.store(false, Ordering::SeqCst);
+    }
+}
+
 impl SearchIndex {
     pub fn new(index_dir: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
         std::fs::create_dir_all(&index_dir)?;
@@ -40,10 +52,28 @@ impl SearchIndex {
         // This is a single-process app: any leftover writer lock is stale.
         let _ = std::fs::remove_file(index_dir.join(".tantivy-writer.lock"));
 
+        // Wipe index if version changed (schema/tokenizer upgrade)
+        let meta_path = index_dir.join("index-meta.json");
+        if Self::stored_version(&meta_path) != INDEX_VERSION {
+            eprintln!("Search index version changed, rebuilding...");
+            let _ = std::fs::remove_dir_all(&index_dir);
+            std::fs::create_dir_all(&index_dir)?;
+            // Write version immediately so we don't re-wipe on next startup
+            let meta = serde_json::json!({ "version": INDEX_VERSION, "sessions": {} });
+            let _ = std::fs::write(&meta_path, serde_json::to_string(&meta).unwrap_or_default());
+        }
+
         let mut schema_builder = Schema::builder();
         let f_session_id = schema_builder.add_text_field("session_id", STRING | STORED);
         let f_project = schema_builder.add_text_field("project", STRING | STORED);
-        let f_content = schema_builder.add_text_field("content", TEXT | STORED);
+        let content_options = TextOptions::default()
+            .set_indexing_options(
+                TextFieldIndexing::default()
+                    .set_tokenizer(TOKENIZER_NAME)
+                    .set_index_option(IndexRecordOption::WithFreqsAndPositions)
+            )
+            .set_stored();
+        let f_content = schema_builder.add_text_field("content", content_options);
         let f_msg_type = schema_builder.add_text_field("msg_type", STRING | STORED);
         let f_timestamp = schema_builder.add_u64_field("timestamp", INDEXED | STORED | FAST);
         let f_message_index = schema_builder.add_u64_field("message_index", STORED);
@@ -54,6 +84,19 @@ impl SearchIndex {
             schema,
         )?;
 
+        // Register lindera Japanese tokenizer (IPAdic / MeCab-compatible)
+        let lindera_tokenizer = {
+            let dictionary = lindera::dictionary::load_dictionary("embedded://ipadic")
+                .map_err(|e| format!("Failed to load IPAdic dictionary: {}", e))?;
+            let segmenter = lindera::segmenter::Segmenter::new(
+                lindera::mode::Mode::Normal,
+                dictionary,
+                None,
+            );
+            lindera_tantivy::tokenizer::LinderaTokenizer::from_segmenter(segmenter)
+        };
+        index.tokenizers().register(TOKENIZER_NAME, lindera_tokenizer);
+
         let reader = index
             .reader_builder()
             .reload_policy(ReloadPolicy::OnCommitWithDelay)
@@ -61,7 +104,6 @@ impl SearchIndex {
 
         let writer = index.writer(WRITER_HEAP_SIZE)?;
 
-        let meta_path = index_dir.join("index-meta.json");
         let indexed_sessions = Self::load_meta(&meta_path);
 
         Ok(Self {
@@ -79,6 +121,14 @@ impl SearchIndex {
             is_indexing: AtomicBool::new(false),
             total_sessions: Mutex::new(0),
         })
+    }
+
+    fn stored_version(meta_path: &Path) -> u32 {
+        std::fs::read_to_string(meta_path)
+            .ok()
+            .and_then(|data| serde_json::from_str::<serde_json::Value>(&data).ok())
+            .and_then(|meta| meta.get("version")?.as_u64())
+            .unwrap_or(0) as u32
     }
 
     fn load_meta(meta_path: &Path) -> HashMap<String, u64> {
@@ -101,7 +151,7 @@ impl SearchIndex {
             .iter()
             .map(|(k, v)| (k.clone(), serde_json::Value::Number((*v).into())))
             .collect();
-        let meta = serde_json::json!({ "sessions": sessions });
+        let meta = serde_json::json!({ "version": INDEX_VERSION, "sessions": sessions });
         match serde_json::to_string(&meta) {
             Ok(json) => {
                 if let Err(e) = std::fs::write(&self.meta_path, json) {
@@ -122,17 +172,6 @@ impl SearchIndex {
         }
     }
 
-    pub fn index_session(
-        &self,
-        session_id: &str,
-        project: &str,
-        session_file: &Path,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        self.index_session_no_commit(session_id, project, session_file)?;
-        self.writer.lock().unwrap().commit()?;
-        Ok(())
-    }
-
     /// Index a session without committing — caller is responsible for commit.
     fn index_session_no_commit(
         &self,
@@ -151,7 +190,7 @@ impl SearchIndex {
 
         // Add new documents
         for msg in &messages {
-            let content: String = msg.content.chars().take(MAX_CONTENT_BYTES).collect();
+            let content: String = msg.content.chars().take(MAX_CONTENT_CHARS).collect();
             writer.add_document(doc!(
                 self.f_session_id => session_id,
                 self.f_project => project,
@@ -257,8 +296,46 @@ impl SearchIndex {
         let limit = limit.min(500);
         let searcher = self.reader.searcher();
         let query_parser = QueryParser::for_index(&self.index, vec![self.f_content]);
+        let escaped_query = query_str
+            .split_whitespace()
+            .map(|term| escape_query_term(&term.to_lowercase()))
+            .collect::<Vec<String>>()
+            .join(" ");
 
-        let text_query = query_parser.parse_query(query_str)?;
+        // Build per-term query: prefix OR fuzzy, all terms must match
+        let terms: Vec<String> = query_str
+            .split_whitespace()
+            .map(|term| escape_query_term(&term.to_lowercase()))
+            .filter(|term| !term.is_empty())
+            .collect();
+        let mut must_clauses: Vec<(Occur, Box<dyn tantivy::query::Query>)> = Vec::new();
+
+        for escaped_term in &terms {
+            let mut should_clauses: Vec<(Occur, Box<dyn tantivy::query::Query>)> = Vec::new();
+
+            // Prefix query (e.g. "robot-ar" matches "robot-arm")
+            if let Ok(prefix_q) = query_parser.parse_query(&format!("{}*", escaped_term)) {
+                should_clauses.push((Occur::Should, prefix_q));
+            }
+
+            // Fuzzy query (Levenshtein distance 1) — only for longer terms to avoid noise
+            if escaped_term.chars().count() >= 7 {
+                let tantivy_term = tantivy::Term::from_field_text(self.f_content, escaped_term);
+                let fuzzy_q = FuzzyTermQuery::new(tantivy_term, 1, true);
+                should_clauses.push((Occur::Should, Box::new(fuzzy_q)));
+            }
+
+            if !should_clauses.is_empty() {
+                must_clauses.push((Occur::Must, Box::new(BooleanQuery::new(should_clauses))));
+            }
+        }
+
+        let text_query: Box<dyn tantivy::query::Query> = if must_clauses.is_empty() {
+            let (query, _errors) = query_parser.parse_query_lenient(&escaped_query);
+            query
+        } else {
+            Box::new(BooleanQuery::new(must_clauses))
+        };
 
         let final_query: Box<dyn tantivy::query::Query> = if let Some(project) = project_filter {
             let project_query = TermQuery::new(
@@ -316,7 +393,20 @@ impl SearchIndex {
                 .unwrap_or(0) as u32;
 
             let snippet = snippet_generator.snippet_from_doc(&doc);
-            let snippet_html = snippet.to_html();
+            let mut snippet_html = snippet.to_html();
+            if snippet_html.trim().is_empty() {
+                snippet_html = doc
+                    .get_first(self.f_content)
+                    .and_then(|v| v.as_str())
+                    .map(|s| {
+                        let compact = s.split_whitespace().collect::<Vec<_>>().join(" ");
+                        compact.chars().take(220).collect::<String>()
+                    })
+                    .unwrap_or_default();
+            }
+            if snippet_html.trim().is_empty() {
+                continue;
+            }
 
             results.push(SearchHit {
                 session_id,
@@ -337,18 +427,29 @@ impl SearchIndex {
 
     pub fn build_full_index(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.is_indexing.store(true, Ordering::SeqCst);
+        let _indexing_guard = IndexingFlagGuard {
+            flag: &self.is_indexing,
+        };
 
-        let history_path = claude_dir().join("history.jsonl");
+        let history_path = history_file();
         if !history_path.exists() {
-            self.is_indexing.store(false, Ordering::SeqCst);
             return Ok(());
         }
 
         // Collect session entries from history
         let file = File::open(&history_path)?;
         let mut session_map: HashMap<String, String> = HashMap::new(); // session_id -> project
+        let mut parse_errors = 0usize;
+        let mut read_errors = 0usize;
 
-        for line in BufReader::new(file).lines().flatten() {
+        for line_result in BufReader::new(file).lines() {
+            let line = match line_result {
+                Ok(line) => line,
+                Err(_) => {
+                    read_errors += 1;
+                    continue;
+                }
+            };
             if let Ok(raw) = serde_json::from_str::<RawHistoryEntry>(&line) {
                 let entry: HistoryEntry = raw.into();
                 if !entry.session_id.is_empty() {
@@ -356,7 +457,15 @@ impl SearchIndex {
                         .entry(entry.session_id)
                         .or_insert(entry.project);
                 }
+            } else {
+                parse_errors += 1;
             }
+        }
+        if parse_errors > 0 || read_errors > 0 {
+            eprintln!(
+                "Search index: ignored {} parse errors and {} read errors while scanning history",
+                parse_errors, read_errors
+            );
         }
 
         *self.total_sessions.lock().unwrap() = session_map.len() as u32;
@@ -390,14 +499,13 @@ impl SearchIndex {
 
         self.writer.lock().unwrap().commit()?;
         self.save_meta();
-        self.is_indexing.store(false, Ordering::SeqCst);
 
         eprintln!("Search index: build complete");
         Ok(())
     }
 
     pub fn update_sessions(&self, session_ids: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-        let history_path = claude_dir().join("history.jsonl");
+        let history_path = history_file();
         if !history_path.exists() {
             return Ok(());
         }
@@ -407,7 +515,16 @@ impl SearchIndex {
         let mut session_project: HashMap<String, String> = HashMap::new();
         let id_set: std::collections::HashSet<&String> = session_ids.iter().collect();
 
-        for line in BufReader::new(file).lines().flatten() {
+        let mut parse_errors = 0usize;
+        let mut read_errors = 0usize;
+        for line_result in BufReader::new(file).lines() {
+            let line = match line_result {
+                Ok(line) => line,
+                Err(_) => {
+                    read_errors += 1;
+                    continue;
+                }
+            };
             if let Ok(raw) = serde_json::from_str::<RawHistoryEntry>(&line) {
                 let entry: HistoryEntry = raw.into();
                 if id_set.contains(&entry.session_id) {
@@ -415,17 +532,26 @@ impl SearchIndex {
                         .entry(entry.session_id)
                         .or_insert(entry.project);
                 }
+            } else {
+                parse_errors += 1;
             }
+        }
+        if parse_errors > 0 || read_errors > 0 {
+            eprintln!(
+                "Search index: ignored {} parse errors and {} read errors in incremental update",
+                parse_errors, read_errors
+            );
         }
 
         for (session_id, project) in &session_project {
             if let Some(session_file) = find_session_file(session_id) {
-                if let Err(e) = self.index_session(session_id, project, &session_file) {
+                if let Err(e) = self.index_session_no_commit(session_id, project, &session_file) {
                     eprintln!("Failed to update index for session {}: {}", session_id, e);
                 }
             }
         }
 
+        self.writer.lock().unwrap().commit()?;
         self.save_meta();
         Ok(())
     }
@@ -446,4 +572,19 @@ struct SearchableMessage {
     msg_type: String,
     timestamp: u64,
     message_index: u32,
+}
+
+fn escape_query_term(term: &str) -> String {
+    let mut escaped = String::with_capacity(term.len());
+    for ch in term.chars() {
+        match ch {
+            '+' | '-' | '=' | '&' | '|' | '>' | '<' | '!' | '(' | ')' | '{' | '}' | '['
+            | ']' | '^' | '"' | '~' | '*' | '?' | ':' | '\\' | '/' => {
+                escaped.push('\\');
+                escaped.push(ch);
+            }
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
 }
