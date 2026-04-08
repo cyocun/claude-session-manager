@@ -123,6 +123,7 @@ async function fetchSessions(includeArchived = false) {
         isFirstLoad = false;
     }
     requestRenderSessions();
+    updateLastUpdateBar();
 }
 function requestRenderSessions() {
     if (renderSessionsQueued)
@@ -1871,10 +1872,19 @@ Promise.all([fetchSessions(), fetchProjects(), fetchSettings()]).then(() => {
         lang: lang,
         showArchived: false,
     });
+    updateLastUpdateBar();
     // Show startup project cards when no session is selected
     showStartupView();
 });
 // Auto-refresh every 30s to detect updated sessions
+function updateLastUpdateBar() {
+    const bar = byIdOptional('lastUpdateBar');
+    if (bar) {
+        const now = new Date();
+        const ts = now.toLocaleTimeString(lang === 'ja' ? 'ja-JP' : 'en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        bar.textContent = `${sessions.length} sessions · ${ts}`;
+    }
+}
 setInterval(async () => {
     const oldSessions = sessions.slice();
     let nextSessions;
@@ -1882,18 +1892,36 @@ setInterval(async () => {
         nextSessions = await invokeStrict('list_sessions', { includeArchived: byId('showArchived').checked });
     }
     catch (error) {
-        console.warn('[sessions] auto-refresh failed', error);
+        console.warn('[poll] auto-refresh failed', error);
         return;
     }
-    // Fetch new data but don't re-render while full-text search results are displayed
+    const added = nextSessions.filter(s => !oldSessions.find(o => o.sessionId === s.sessionId));
+    const removed = oldSessions.filter(s => !nextSessions.find(o => o.sessionId === s.sessionId));
+    const changed = nextSessions.filter(s => {
+        const old = oldSessions.find(o => o.sessionId === s.sessionId);
+        return old && old.lastTimestamp !== s.lastTimestamp;
+    });
+    const hasDataChange = added.length > 0 || removed.length > 0 || changed.length > 0;
+    if (hasDataChange) {
+        console.log(`[poll] data changed: +${added.length} -${removed.length} ~${changed.length} (total ${nextSessions.length})`);
+    }
     sessions = nextSessions;
     if (isFirstLoad) {
         sessions.forEach(s => { knownTimestamps[s.sessionId] = s.lastTimestamp; });
         isFirstLoad = false;
     }
-    if (!fullTextSearch.isSearchActive()) {
+    updateLastUpdateBar();
+    const searchActive = fullTextSearch.isSearchActive();
+    if (searchActive) {
+        if (hasDataChange) {
+            console.log('[poll] search active — re-running search with updated data');
+            fullTextSearch.onSearchInput();
+        }
+    }
+    else {
         const identityChanged = hasSessionIdentityOrderChanged(oldSessions, nextSessions, SEVEN_DAYS);
         if (identityChanged) {
+            console.log('[poll] identity/order changed — full render');
             requestRenderSessions();
         }
         else {
@@ -1910,20 +1938,17 @@ setInterval(async () => {
                     : ''),
                 isUpdatedSession,
             });
-            if (!patched)
+            if (!patched) {
+                console.log('[poll] patch failed — full render');
                 requestRenderSessions();
+            }
         }
     }
     // Incremental search index update for changed sessions
-    const updatedIds = sessions
-        .filter(s => {
-        const old = oldSessions.find(o => o.sessionId === s.sessionId);
-        return !old || old.lastTimestamp !== s.lastTimestamp;
-    })
-        .map(s => s.sessionId);
+    const updatedIds = changed.map(s => s.sessionId).concat(added.map(s => s.sessionId));
     if (updatedIds.length > 0) {
         invoke('update_search_index', { sessionIds: updatedIds }).catch((error) => {
-            console.warn('[search] incremental index update failed', error);
+            console.warn('[poll] incremental index update failed', error);
         });
     }
 }, 30000);

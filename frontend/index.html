@@ -35,7 +35,7 @@
 <body class="h-screen" style="background:var(--bg);display:grid;grid-template-columns:1fr;grid-template-rows:1fr;">
 
   <!-- Left pane: session list and global search controls. -->
-  <div id="sessionListPane" class="macos-sidebar" style="display:grid;grid-template-rows:auto auto 1fr;overflow:hidden;">
+  <div id="sessionListPane" class="macos-sidebar" style="display:grid;grid-template-rows:auto auto 1fr auto;overflow:hidden;">
     <!-- Titlebar drag area -->
     <div data-tauri-drag-region class="titlebar-drag" style="height:38px;"></div>
     <!-- Search + new button -->
@@ -61,6 +61,8 @@
     <div class="overflow-y-auto scrollbar-thin px-2 pb-3" style="min-height:0;">
       <div id="sessionList" class="space-y-0.5"></div>
     </div>
+    <!-- Last update indicator -->
+    <div id="lastUpdateBar" class="px-3 py-1" style="font-size:10px;color:var(--text-faint);border-top:0.5px solid var(--border);text-align:right;flex-shrink:0;"></div>
     <!-- Hidden elements for state -->
     <input type="checkbox" id="showArchived" class="hidden">
     <h2 id="sessionListTitle" class="hidden"></h2>
