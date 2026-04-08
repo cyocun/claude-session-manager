@@ -43,6 +43,11 @@ export function createSessionActions(deps: SessionActionsDeps) {
     } else {
       showToast(data.method + t('toastResumed'));
     }
+    scheduleRefresh();
+  }
+
+  function scheduleRefresh(): void {
+    setTimeout(() => fetchSessions(getShowArchived()), 2000);
   }
 
   async function copyResume(sessionId: string): Promise<void> {

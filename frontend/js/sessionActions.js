@@ -17,6 +17,10 @@ export function createSessionActions(deps) {
         else {
             showToast(data.method + t('toastResumed'));
         }
+        scheduleRefresh();
+    }
+    function scheduleRefresh() {
+        setTimeout(() => fetchSessions(getShowArchived()), 2000);
     }
     async function copyResume(sessionId) {
         const data = await invoke('get_resume_command', { sessionId });

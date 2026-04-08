@@ -321,8 +321,9 @@ function renderProjectCard(p: ProjectInfo, iconUri: string | null): HTMLElement 
   const finderIcon = ICONS.folderOpen;
   const readmeIcon = ICONS.fileText;
 
-  actionsRow.appendChild(makeIconBtn(t('newSession'), newIcon, () => {
-    void invoke('start_new_session_in_project', { project: p.path });
+  actionsRow.appendChild(makeIconBtn(t('newSession'), newIcon, async () => {
+    await invoke('start_new_session_in_project', { project: p.path });
+    setTimeout(() => fetchSessions(byId<HTMLInputElement>('showArchived').checked), 2000);
   }));
 
   if (p.lastSessionId) {
@@ -1472,6 +1473,7 @@ function renderProjectGroup(g: ProjectGroup, groups: ProjectGroup[]): HTMLElemen
       e.stopPropagation();
       const result = await invoke('start_new_session_in_project', { project: g.path });
       if (!result?.ok) actions.showToast(t('toastError') + (result?.error || ''));
+      else setTimeout(() => fetchSessions(byId<HTMLInputElement>('showArchived').checked), 2000);
     }
   });
   const icon = createEl('span', { className: 'project-group-icon' });
@@ -1856,6 +1858,7 @@ byId('archiveSelectedBtn').addEventListener('click', () => actions.archiveSelect
 byId('newSessionBtn').addEventListener('click', async () => {
   const result = await invoke('start_new_session');
   if (result && !result.ok) actions.showToast(t('toastError') + (result.error || ''));
+  else setTimeout(() => fetchSessions(byId<HTMLInputElement>('showArchived').checked), 2000);
 });
 
 // Native menu events are emitted by Tauri and reflected into in-app state.
