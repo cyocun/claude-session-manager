@@ -4,9 +4,7 @@ use std::io::{BufRead, BufReader};
 use std::process::Command;
 
 fn claude_dir() -> std::path::PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".claude")
+    super::sessions::claude_dir()
 }
 
 fn find_project_for_session(session_id: &str) -> Option<String> {
@@ -22,62 +20,128 @@ fn find_project_for_session(session_id: &str) -> Option<String> {
     None
 }
 
-fn find_running_session(session_id: &str) -> Option<String> {
-    let output = Command::new("pgrep")
-        .args(["-af", &format!("claude.*--resume.*{}", session_id)])
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let pid = stdout.trim().split_whitespace().next()?;
-        Some(pid.to_string())
-    } else {
-        None
+/// Look up ~/.claude/sessions/{PID}.json to find which PID owns the given session ID.
+/// Returns (pid, tty) if the process is still alive.
+fn find_running_session(session_id: &str) -> Option<(String, String)> {
+    let sessions_dir = claude_dir().join("sessions");
+    for entry in std::fs::read_dir(&sessions_dir).ok()?.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let v: serde_json::Value = match serde_json::from_str(&content) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if v.get("sessionId").and_then(|s| s.as_str()) != Some(session_id) {
+            continue;
+        }
+        let pid = match v.get("pid").and_then(|p| p.as_u64()) {
+            Some(p) => p.to_string(),
+            None => continue,
+        };
+        // Verify process is still alive
+        let alive = Command::new("ps")
+            .args(["-p", &pid, "-o", "pid="])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !alive {
+            continue;
+        }
+        // Walk up process tree to find the iTerm session's tty.
+        // claude spawns a pty, so its tty differs from the iTerm session tty.
+        // Typically: claude(ttyA) -> shell(ttyA) -> shell(ttyB) where ttyB is the iTerm session.
+        if let Some(tty) = find_iterm_tty(&pid) {
+            return Some((pid, tty));
+        }
     }
+    None
 }
 
-fn activate_terminal_window(session_id: &str, terminal_app: &str) -> bool {
+/// Walk up the process tree to find the tty that iTerm owns.
+/// claude creates a pty internally, so its direct tty != the iTerm session tty.
+/// We walk ancestors until the tty changes — that ancestor's tty is the iTerm session's.
+fn find_iterm_tty(pid: &str) -> Option<String> {
+    let get_ppid_tty = |p: &str| -> Option<(String, String)> {
+        let out = Command::new("ps")
+            .args(["-o", "ppid=,tty=", "-p", p])
+            .output()
+            .ok()?;
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        let mut parts = s.split_whitespace();
+        let ppid = parts.next()?.to_string();
+        let tty = parts.next()?.to_string();
+        Some((ppid, tty))
+    };
+
+    // Get claude's own tty
+    let out = Command::new("ps")
+        .args(["-o", "tty=", "-p", pid])
+        .output()
+        .ok()?;
+    let own_tty = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if own_tty.is_empty() || own_tty == "?" {
+        return None;
+    }
+
+    // Walk up until tty changes (max 5 hops to avoid infinite loops)
+    let mut current = pid.to_string();
+    for _ in 0..5 {
+        let (ppid, tty) = get_ppid_tty(&current)?;
+        if tty != own_tty && tty != "??" {
+            return Some(format!("/dev/{}", tty));
+        }
+        if ppid == "1" || ppid == "0" {
+            break;
+        }
+        current = ppid;
+    }
+
+    // Fallback: use own tty
+    Some(format!("/dev/{}", own_tty))
+}
+
+/// Focus the terminal tab that owns the given tty.
+fn activate_terminal_window(tty: &str, terminal_app: &str) -> bool {
     let script = match terminal_app {
         "iTerm" => format!(
             r#"tell application "iTerm"
                 repeat with w in windows
                     repeat with t in tabs of w
                         repeat with s in sessions of t
-                            if tty of s is not "" then
-                                set sessionName to name of s
-                                if sessionName contains "{sid}" then
-                                    select t
-                                    set index of w to 1
-                                    activate
-                                    return true
-                                end if
+                            if tty of s is "{tty}" then
+                                select t
+                                set index of w to 1
+                                activate
+                                return true
                             end if
                         end repeat
                     end repeat
                 end repeat
             end tell
             return false"#,
-            sid = session_id
+            tty = tty
         ),
         "Terminal" => format!(
             r#"tell application "Terminal"
                 repeat with w in windows
                     repeat with t in tabs of w
-                        if processes of t contains "claude" then
-                            set customTitle to custom title of t
-                            if customTitle contains "{sid}" then
-                                set selected tab of w to t
-                                set index of w to 1
-                                activate
-                                return true
-                            end if
+                        if tty of t is "{tty}" then
+                            set selected tab of w to t
+                            set index of w to 1
+                            activate
+                            return true
                         end if
                     end repeat
                 end repeat
             end tell
             return false"#,
-            sid = session_id
+            tty = tty
         ),
         _ => return false,
     };
@@ -168,10 +232,10 @@ pub fn get_resume_command(session_id: String) -> Result<ResumeCommand, String> {
 
 #[tauri::command]
 pub fn get_session_status(session_id: String) -> SessionStatus {
-    let pid = find_running_session(&session_id);
+    let result = find_running_session(&session_id);
     SessionStatus {
-        running: pid.is_some(),
-        pid,
+        running: result.is_some(),
+        pid: result.map(|(pid, _)| pid),
     }
 }
 
@@ -261,9 +325,9 @@ pub fn resume_session(session_id: String) -> ResumeResult {
     let settings = super::settings::get_settings();
     let terminal_app = normalize_terminal_app(&settings.terminal_app);
 
-    // Check if already running
-    if let Some(pid) = find_running_session(&session_id) {
-        if activate_terminal_window(&session_id, terminal_app) {
+    // Check if already running — focus existing terminal tab via tty
+    if let Some((pid, tty)) = find_running_session(&session_id) {
+        if activate_terminal_window(&tty, terminal_app) {
             return ResumeResult { ok: true, method: "activated".to_string(), pid: Some(pid), error: None };
         }
         let _ = Command::new("osascript")

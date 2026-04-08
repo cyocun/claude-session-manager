@@ -828,7 +828,7 @@ const TIME_RANGES = [
 async function openTokenModal() {
     closeTokenModal();
     const modal = createEl('div', {
-        className: 'project-summary-modal',
+        className: 'token-modal',
         onClick: (e) => {
             if (e.target === modal)
                 closeTokenModal();
@@ -839,7 +839,7 @@ async function openTokenModal() {
     const usageBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('tokenOpenUsage') });
     const refreshBtn = createEl('button', { className: 'mac-btn text-xs', textContent: t('tokenRefresh') });
     const closeBtn = createEl('button', { className: 'token-close-btn', textContent: '\u00D7' });
-    const body = createEl('div', { className: 'project-summary-body', textContent: t('loading') });
+    const body = createEl('div', { className: 'token-body', textContent: t('loading') });
     // Time range selector
     const rangePills = createEl('div', { className: 'token-pill-group' });
     let selectedRange = null; // null = all
@@ -861,7 +861,7 @@ async function openTokenModal() {
     const headerRow1 = createEl('div', { className: 'token-header-row' }, [title, createEl('span', { style: 'flex:1' }), closeBtn]);
     const headerRow2 = createEl('div', { className: 'token-header-row' }, [rangePills, createEl('span', { style: 'flex:1' }), usageBtn, refreshBtn]);
     const header = createEl('div', { className: 'token-header' }, [headerRow1, headerRow2]);
-    const dialog = createEl('div', { className: 'project-summary-dialog' }, [header, body]);
+    const dialog = createEl('div', { className: 'token-dialog' }, [header, body]);
     modal.appendChild(dialog);
     document.body.appendChild(modal);
     tokenModal = modal;

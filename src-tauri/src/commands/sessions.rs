@@ -6,6 +6,9 @@ use std::io::{BufRead, BufReader};
 use walkdir::WalkDir;
 
 pub fn claude_dir() -> std::path::PathBuf {
+    if let Ok(dir) = std::env::var("CLAUDE_DATA_DIR") {
+        return std::path::PathBuf::from(dir);
+    }
     dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join(".claude")
