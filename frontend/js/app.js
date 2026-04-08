@@ -29,7 +29,8 @@ function applyI18n() {
     const cs = byIdOptional('chatSearch');
     if (cs)
         cs.placeholder = t('chatSearchPlaceholder');
-    byId('newSessionBtn').title = lang === 'ja' ? '新規セッション' : 'New Session';
+    byId('homeBtn').title = t('home');
+    byId('newSessionBtn').title = t('newSession');
     const tokenBtn = byId('tokenDashboardBtn');
     if (tokenBtn)
         tokenBtn.title = t('tokenDashboard');
@@ -715,16 +716,14 @@ function drawHeatmap(canvas, byDay) {
     ctx.fillStyle = cssVar('--text-faint', '#888');
     ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
     ctx.textAlign = 'right';
-    const dayLabels = lang === 'ja' ? ['月', '', '水', '', '金', '', ''] : ['Mon', '', 'Wed', '', 'Fri', '', ''];
+    const dayLabels = [t('dayMon'), '', t('dayWed'), '', t('dayFri'), '', ''];
     dayLabels.forEach((label, i) => {
         if (label)
             ctx.fillText(label, padL - 4, padT + i * (cellSize + gap) + cellSize - 1);
     });
     ctx.textAlign = 'center';
     let lastMonth = -1;
-    const months = lang === 'ja'
-        ? ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
-        : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [t('month1'), t('month2'), t('month3'), t('month4'), t('month5'), t('month6'), t('month7'), t('month8'), t('month9'), t('month10'), t('month11'), t('month12')];
     dates.forEach((d, i) => {
         const col = Math.floor(i / rows);
         const row = i % rows;
@@ -840,7 +839,7 @@ function drawWordCloud(canvas, words) {
             return;
         }
         canvas.style.cursor = 'pointer';
-        const countLabel = `${top[hit].count} ${lang === 'ja' ? '回' : 'times'}`;
+        const countLabel = `${top[hit].count} ${t('countTimes')}`;
         showChartTooltipEl(canvas, e.clientX - rect.left, e.clientY - rect.top, buildTooltipContent([{ label: top[hit].word, bold: true }, { label: countLabel }]));
     };
     canvas.onmouseleave = () => { hideChartTooltip(); canvas.style.cursor = 'default'; };
@@ -1376,7 +1375,7 @@ function renderProjectGroup(g, groups) {
         else {
             const showOlderBtn = createEl('button', {
                 className: 'show-older-pill',
-                textContent: (lang === 'ja' ? '古いセッションを表示' : 'Show older') + ' (' + olderSessions.length + ')',
+                textContent: t('showOlder') + ' (' + olderSessions.length + ')',
                 onClick: (e) => {
                     e.stopPropagation();
                     showAllSessions.add(g.path);
@@ -1387,7 +1386,7 @@ function renderProjectGroup(g, groups) {
         }
     }
     if (recentSessions.length === 0 && !showAllSessions.has(g.path)) {
-        const hint = createEl('p', { className: 'text-[11px] px-3 py-1.5', textContent: lang === 'ja' ? '最近のセッションなし' : 'No recent sessions' });
+        const hint = createEl('p', { className: 'text-[11px] px-3 py-1.5', textContent: t('noRecentSessions') });
         hint.style.color = 'var(--text-faint)';
         sessionsDiv.insertBefore(hint, sessionsDiv.firstChild);
     }
@@ -1540,7 +1539,7 @@ function renderDetailFooter(sessionId) {
     const summarizeBtn = mkBtn(t('summarize'), false, async () => {
         const res = await invoke('resume_with_prompt', {
             sessionId,
-            prompt: 'このセッションの内容を要約して',
+            prompt: t('summarizePrompt'),
         });
         if (res?.ok)
             actions.showToast(t('toastSummarizing'));

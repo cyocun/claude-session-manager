@@ -178,17 +178,17 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
       msg.style.color = 'var(--text-faint)';
       msg.textContent = searchIndexReady
         ? (mode === 'similar' ? t('similarNoResults') : t('searchNoResults'))
-        : (lang === 'ja' ? 'インデックス構築中...' : 'Indexing...');
+        : t('searchIndexing');
       el.appendChild(msg);
       byId('sessionListTitle').textContent = searchIndexReady
         ? (mode === 'similar' ? t('similarNoResults') : t('searchNoResults'))
-        : (lang === 'ja' ? 'インデックス構築中...' : 'Indexing...');
+        : t('searchIndexing');
       return;
     }
 
     byId('sessionListTitle').textContent =
       t('searchResults').replace('{n}', String(searchResults.length)) +
-      (searchIndexReady ? '' : (lang === 'ja' ? ' (インデックス構築中...)' : ' (indexing...)'));
+      (searchIndexReady ? '' : ` (${t('searchIndexing')})`);
 
     const sessionTitleMap = new Map<string, string>();
     getSessions().forEach((summary) => {

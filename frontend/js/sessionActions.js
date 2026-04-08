@@ -12,7 +12,7 @@ export function createSessionActions(deps) {
             showToast(t('toastError') + (data?.error || ''));
         }
         else if (data.method === 'activated' || data.method === 'activated-app') {
-            showToast(getLang() === 'ja' ? '実行中のウィンドウをアクティブにしました' : 'Activated existing window');
+            showToast(t('activatedWindow'));
         }
         else {
             showToast(data.method + t('toastResumed'));
