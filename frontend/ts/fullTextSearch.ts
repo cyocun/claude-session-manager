@@ -1,3 +1,6 @@
+import { normalizeSearchQuery } from './searchUtils.js';
+import { ICONS } from './icons.js';
+
 type SearchHit = {
   project: string;
   sessionId: string;
@@ -40,6 +43,7 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
   let searchMode: SearchMode = 'fulltext';
   let searchResults: SearchHit[] = [];
   let activeQuery = '';
+  let activeResolvedQuery = '';
   let activeSearchMode: SearchMode = 'fulltext';
   let searchIndexReady = false;
   let fulltextSearchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -76,6 +80,7 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     const trimmedQuery = query.trim();
     if (!trimmedQuery || trimmedQuery.length < 2) {
       activeQuery = '';
+      activeResolvedQuery = '';
       searchResults = [];
       renderSessions();
       return;
@@ -87,15 +92,40 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     activeSearchMode = requestMode;
 
     renderLoading();
-    const results = await invoke('search_sessions', {
-      query: trimmedQuery,
+    const searchArgs = {
       project: getSelectedProject() || null,
       limit: requestMode === 'similar' ? 80 : 50,
-    }) || [];
+    };
+    let results: SearchHit[] = [];
+    let resolvedQuery = trimmedQuery;
+    try {
+      results = await invoke('search_sessions', {
+        query: trimmedQuery,
+        ...searchArgs,
+      }) || [];
+    } catch (error) {
+      console.warn('[search] primary query failed, retrying with normalized query', error);
+      const retryQuery = normalizeSearchQuery(trimmedQuery);
+      if (retryQuery.length >= 2 && retryQuery !== trimmedQuery) {
+        try {
+          results = await invoke('search_sessions', {
+            query: retryQuery,
+            ...searchArgs,
+          }) || [];
+          resolvedQuery = retryQuery;
+        } catch (retryError) {
+          console.error('[search] retry query failed', retryError);
+          results = [];
+        }
+      } else {
+        results = [];
+      }
+    }
 
     if (requestSeq !== searchRequestSeq) return;
     if (activeQuery !== trimmedQuery) return;
 
+    activeResolvedQuery = resolvedQuery;
     searchResults = results;
     renderResults(requestMode);
   }
@@ -188,7 +218,7 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
 
       const icon = document.createElement('span');
       icon.className = 'project-group-icon';
-      icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5A1.5 1.5 0 013.5 3H6l1.5 2h5A1.5 1.5 0 0114 6.5v5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5z"/></svg>';
+      icon.innerHTML = ICONS.folder;
 
       const sessMap = projMap[proj];
       const hitCount = Object.values(sessMap).reduce((n, arr) => n + arr.length, 0);
@@ -273,7 +303,7 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
             item.style.outline = '2px solid var(--accent)';
             setSelectedSession(hit.sessionId);
             void showDetail(hit.sessionId).then(() => {
-              const q = (byId('search') as HTMLInputElement).value.trim();
+              const q = activeResolvedQuery || (byId('search') as HTMLInputElement).value.trim();
               const chatInput = byId('chatSearch') as HTMLInputElement | null;
               if (q && chatInput) {
                 chatInput.value = q;

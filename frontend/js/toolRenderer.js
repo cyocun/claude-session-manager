@@ -1,15 +1,16 @@
+import { ICONS } from './icons.js';
 const TOOL_ICONS = {
-    Bash: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2" width="13" height="12" rx="2"/><path d="M4.5 6l2.5 2-2.5 2"/><path d="M8.5 10h3"/></svg>',
-    Edit: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2.5l2.5 2.5L5.5 13H3v-2.5L11 2.5z"/></svg>',
-    Write: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2H4.5A1.5 1.5 0 003 3.5v9A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V7"/><path d="M12 2v4h-4"/><path d="M12 2L8 6"/></svg>',
-    Read: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2H4.5A1.5 1.5 0 003 3.5v9A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V7L9 2z"/><path d="M9 2v5h4"/></svg>',
-    Glob: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 2H3.5A1.5 1.5 0 002 3.5v9A1.5 1.5 0 003.5 14h9a1.5 1.5 0 001.5-1.5V6.5L10 2H6.5z"/><path d="M6.5 2v3h-3"/></svg>',
-    Grep: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>',
-    Agent: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5.5" r="3"/><path d="M2.5 14c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/></svg>',
-    WebSearch: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M2 8h12"/><ellipse cx="8" cy="8" rx="3" ry="6"/></svg>',
-    WebFetch: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v7"/><path d="M5 7l3 3 3-3"/><path d="M3 12h10"/></svg>',
+    Bash: ICONS.terminal,
+    Edit: ICONS.pencil,
+    Write: ICONS.filePlus,
+    Read: ICONS.fileText,
+    Glob: ICONS.files,
+    Grep: ICONS.search,
+    Agent: ICONS.user,
+    WebSearch: ICONS.world,
+    WebFetch: ICONS.download,
 };
-const TOOL_ICON_DEFAULT = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2L6 6.5l4 3-3.5 4.5"/></svg>';
+const TOOL_ICON_DEFAULT = ICONS.code;
 function toolIcon(name) {
     const span = document.createElement('span');
     span.style.cssText = 'display:inline-flex;align-items:center;flex-shrink:0;color:var(--text-muted);';

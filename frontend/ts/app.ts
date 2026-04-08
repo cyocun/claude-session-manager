@@ -1,7 +1,7 @@
 import { detectLang, translate } from './i18n.js';
-import { createEl } from './dom.js';
+import { createEl, getById } from './dom.js';
 import { getThemePref, applyTheme, watchSystemTheme } from './theme.js';
-import { invoke, isTauri } from './tauri.js';
+import { invoke, invokeStrict, isTauri } from './tauri.js';
 import { isRemoteHost, shortPath, shortPathElements, timeAgo } from './utils.js';
 import {
   getPreviewDetailCached,
@@ -16,24 +16,14 @@ import { createFullTextSearchController } from './fullTextSearch.js';
 import { renderToolBlocks } from './toolRenderer.js';
 import { createSessionActions } from './sessionActions.js';
 import { initKeyboardNavigation, initResizeHandle } from './layoutControls.js';
+import type { DetailMessage, ProjectGroup, ProjectInfo, ServerSettings, SessionDetail, SessionSummary } from './types.js';
+import { hasSessionIdentityOrderChanged, patchSessionListItems } from './sessionListView.js';
+import { ICONS } from './icons.js';
 
 const tauriWindow = window.__TAURI__ as any;
-const byId = (id: string) => document.getElementById(id) as any;
-
-type SessionSummary = {
-  sessionId: string;
-  project: string;
-  firstDisplay: string;
-  lastDisplay?: string;
-  lastTimestamp: number;
-  messageCount: number;
-  archived?: boolean;
-};
-
-type ProjectInfo = { path: string; name?: string; lastSessionId?: string; sessionCount?: number; lastTimestamp?: number };
-type ProjectGroup = { path: string; sessions: SessionSummary[] };
-type DetailMessage = { type: string; content?: string; tools?: any[] };
-type SessionDetail = { project: string; messages: DetailMessage[] };
+const byId = <T extends HTMLElement = HTMLElement>(id: string): T => getById<T>(id);
+const byIdOptional = <T extends HTMLElement = HTMLElement>(id: string): T | null =>
+  document.getElementById(id) as T | null;
 type MsgDesc = { msg: DetailMessage; hasText: boolean; hasTools: boolean; origIdx: number };
 type TokenTotals = {
   inputTokens: number;
@@ -111,8 +101,8 @@ function applyI18n() {
     const node = el as HTMLElement;
     el.textContent = t(node.dataset.i18nOption || '');
   });
-  byId('search').placeholder = t('searchContent');
-  const cs = byId('chatSearch');
+  byId<HTMLInputElement>('search').placeholder = t('searchContent');
+  const cs = byIdOptional<HTMLInputElement>('chatSearch');
   if (cs) cs.placeholder = t('chatSearchPlaceholder');
   byId('newSessionBtn').title = lang === 'ja' ? '新規セッション' : 'New Session';
   const tokenBtn = byId('tokenDashboardBtn') as HTMLButtonElement | null;
@@ -144,7 +134,7 @@ let projects: ProjectInfo[] = [];
 let selectedProject: string | null = null;
 let selectedSession: string | null = null;
 let selectedIds = new Set<string>();
-let serverSettings: any = {};
+let serverSettings: ServerSettings = {};
 let projectNameMap: Record<string, string> = {}; // path -> display name
 // Stores projects the user has explicitly toggled open/closed
 let toggledProjects = new Set<string>(JSON.parse(localStorage.getItem('csm-toggled') || '[]'));
@@ -158,6 +148,7 @@ let renderAbort: { aborted: boolean } | null = null;
 let tokenModal: HTMLElement | null = null;
 let isPreviewHotkeyPressed = false;
 let activeSessionItemEl: HTMLElement | null = null;
+let renderSessionsQueued = false;
 // Search controllers are pure modules; app.ts wires them to current state/getters.
 const chatSearch = createChatSearchController({
   byId,
@@ -190,29 +181,57 @@ const actions = createSessionActions({
 });
 
 async function fetchSessions(includeArchived = false) {
-  sessions = await invoke('list_sessions', { includeArchived }) || [];
+  try {
+    sessions = await invokeStrict<SessionSummary[]>('list_sessions', { includeArchived });
+  } catch (error) {
+    console.warn('[sessions] fetch failed', error);
+    sessions = [];
+  }
   if (isFirstLoad) {
     sessions.forEach(s => { knownTimestamps[s.sessionId] = s.lastTimestamp; });
     isFirstLoad = false;
   }
-  renderSessions();
+  requestRenderSessions();
+}
+
+function requestRenderSessions(): void {
+  if (renderSessionsQueued) return;
+  renderSessionsQueued = true;
+  requestAnimationFrame(() => {
+    renderSessionsQueued = false;
+    renderSessions();
+  });
 }
 function isUpdatedSession(s: SessionSummary): boolean {
   if (!(s.sessionId in knownTimestamps)) return true; // new session
   return s.lastTimestamp > knownTimestamps[s.sessionId]; // timestamp changed
 }
 async function fetchProjects() {
-  projects = await invoke('list_projects') || [];
+  try {
+    projects = await invokeStrict<ProjectInfo[]>('list_projects');
+  } catch (error) {
+    console.warn('[projects] fetch failed', error);
+    projects = [];
+  }
   projectNameMap = {};
   projects.forEach(p => { if (p.name) projectNameMap[p.path] = p.name; });
   renderProjects();
 }
 async function fetchDetail(sessionId: string): Promise<SessionDetail | null> {
-  const detail = await invoke('get_session_detail', { sessionId });
-  return detail as SessionDetail | null;
+  try {
+    return await invokeStrict<SessionDetail>('get_session_detail', { sessionId });
+  } catch (error) {
+    console.warn('[detail] fetch failed', error);
+    return null;
+  }
 }
 async function fetchSettings() {
-  serverSettings = await invoke('get_settings') || {};
+  try {
+    serverSettings = await invokeStrict<ServerSettings>('get_settings');
+  } catch (error) {
+    console.warn('[settings] fetch failed', error);
+    serverSettings = {};
+  }
 }
 
 function projectDisplayName(path: string): string {
@@ -280,25 +299,50 @@ function renderProjectCard(p: ProjectInfo, iconUri: string | null): HTMLElement 
   pathEl.title = p.path;
 
   const actionsRow = createEl('div', { className: 'startup-card-actions' });
-  const newBtn = createEl('button', {
-    className: 'mac-btn', textContent: t('newSession'),
-    onClick: () => { invoke('start_new_session_in_project', { project: p.path }); },
-  });
-  actionsRow.appendChild(newBtn);
+  const makeIconBtn = (title: string, iconSvg: string, onClick: () => void, primary = false): HTMLElement => {
+    const btn = createEl('button', {
+      className: `mac-btn${primary ? ' mac-btn-primary' : ''}`,
+      title,
+      'aria-label': title,
+      onClick: (e: Event) => {
+        e.stopPropagation();
+        onClick();
+      },
+    });
+    btn.style.cssText = 'width:28px;height:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;';
+    btn.innerHTML = iconSvg;
+    return btn;
+  };
+
+  const newIcon = ICONS.plus;
+  const resumeIcon = ICONS.refresh;
+  const terminalIcon = ICONS.terminal;
+  const finderIcon = ICONS.folderOpen;
+  const readmeIcon = ICONS.fileText;
+
+  actionsRow.appendChild(makeIconBtn(t('newSession'), newIcon, () => {
+    void invoke('start_new_session_in_project', { project: p.path });
+  }));
 
   if (p.lastSessionId) {
-    const resumeBtn = createEl('button', {
-      className: 'mac-btn mac-btn-primary', textContent: t('resumeLast'),
-      onClick: () => { actions.resumeInTerminal(p.lastSessionId!); },
-    });
-    actionsRow.appendChild(resumeBtn);
+    actionsRow.appendChild(makeIconBtn(t('resumeLast'), resumeIcon, () => {
+      void actions.resumeInTerminal(p.lastSessionId!);
+    }, true));
   }
 
-  const readmeBtn = createEl('button', {
-    className: 'mac-btn', textContent: t('readme'),
-    onClick: () => { openReadmeWindow(p.path, name); },
-  });
-  actionsRow.appendChild(readmeBtn);
+  actionsRow.appendChild(makeIconBtn(t('openProjectTerminal'), terminalIcon, async () => {
+    const result = await invoke('open_project_in_terminal', { project: p.path });
+    if (!result?.ok) actions.showToast(t('toastError') + (result?.error || ''));
+  }));
+
+  actionsRow.appendChild(makeIconBtn(t('openProjectFinder'), finderIcon, async () => {
+    const result = await invoke('open_path', { path: p.path });
+    if (result === null) actions.showToast(t('toastError'));
+  }));
+
+  actionsRow.appendChild(makeIconBtn(t('readme'), readmeIcon, () => {
+    void openReadmeWindow(p.path, name);
+  }));
 
   info.appendChild(nameEl);
   info.appendChild(pathEl);
@@ -430,7 +474,7 @@ function focusProjectInSidebar(projectPath: string): void {
     const searchEl = byId('search') as HTMLInputElement;
     if (searchEl.value) {
       searchEl.value = '';
-      renderSessions();
+      requestRenderSessions();
     }
     requestAnimationFrame(findAndFocus);
   }
@@ -1266,32 +1310,32 @@ function renderSessionItem(s: SessionSummary): HTMLElement {
   });
   if (selectedIds.has(s.sessionId)) (cb as HTMLInputElement).checked = true;
 
-  const firstMsg = createEl('p', { className: 'text-sm leading-snug truncate', textContent: s.firstDisplay });
+  const firstMsg = createEl('p', { className: 'session-first text-sm leading-snug truncate', textContent: s.firstDisplay });
   firstMsg.style.color = 'var(--text)';
   const lastMsg = (s.lastDisplay && s.lastDisplay !== s.firstDisplay)
-    ? createEl('p', { className: 'text-xs leading-snug truncate mt-0.5', textContent: s.lastDisplay })
+    ? createEl('p', { className: 'session-last text-xs leading-snug truncate mt-0.5', textContent: s.lastDisplay })
     : null;
   if (lastMsg) lastMsg.style.color = 'var(--text-muted)';
 
   const dot = () => { const sp = createEl('span', { className: 'text-[10px] flex-shrink-0', textContent: '·' }); sp.style.color = 'var(--text-dot)'; return sp; };
-  const meta = (txt: string) => { const sp = createEl('span', { className: 'text-[10px] flex-shrink-0', textContent: txt }); sp.style.color = 'var(--text-faint)'; return sp; };
-  const metaParts = [meta(timeAgo(s.lastTimestamp, lang, t)), dot(), meta(s.messageCount + t('msg'))];
-  if (s.archived) { const sp = createEl('span', { className: 'text-[10px] flex-shrink-0', textContent: t('archived') }); sp.style.color = 'var(--text-faint)'; metaParts.push(sp); }
+  const meta = (txt: string, cls = '') => { const sp = createEl('span', { className: `text-[10px] flex-shrink-0 ${cls}`.trim(), textContent: txt }); sp.style.color = 'var(--text-faint)'; return sp; };
+  const metaParts = [meta(timeAgo(s.lastTimestamp, lang, t), 'session-meta-time'), dot(), meta(s.messageCount + t('msg'), 'session-meta-count')];
+  if (s.archived) { const sp = createEl('span', { className: 'session-meta-archived text-[10px] flex-shrink-0', textContent: t('archived') }); sp.style.color = 'var(--text-faint)'; metaParts.push(sp); }
 
   const updated = isUpdatedSession(s);
 
-  const metaDiv = createEl('div', { className: 'mt-1 overflow-hidden' }, metaParts);
+  const metaDiv = createEl('div', { className: 'session-meta mt-1 overflow-hidden' }, metaParts);
   metaDiv.style.cssText = 'display:grid;grid-auto-flow:column;grid-auto-columns:max-content;align-items:center;gap:8px;';
-  const textDiv = createEl('div', { className: 'min-w-0 overflow-hidden' }, [firstMsg, lastMsg, metaDiv].filter(Boolean));
+  const textDiv = createEl('div', { className: 'session-text min-w-0 overflow-hidden' }, [firstMsg, lastMsg, metaDiv].filter(Boolean));
 
   const rowChildren = [cb];
   if (updated) {
-    const updDot = createEl('span', { className: 'flex-shrink-0 mt-1.5' });
+    const updDot = createEl('span', { className: 'session-updated-dot flex-shrink-0 mt-1.5' });
     updDot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--updated-dot);';
     rowChildren.push(updDot);
   }
   rowChildren.push(textDiv);
-  const row = createEl('div', { className: 'overflow-hidden' }, rowChildren);
+  const row = createEl('div', { className: 'session-row overflow-hidden' }, rowChildren);
   row.style.cssText = 'display:grid;grid-template-columns:' + (updated ? 'auto auto 1fr' : 'auto 1fr') + ';align-items:start;gap:8px;';
 
   const isActive = selectedSession === s.sessionId;
@@ -1299,6 +1343,7 @@ function renderSessionItem(s: SessionSummary): HTMLElement {
   const item = createEl('div', {
     className: 'session-item p-3 rounded cursor-default transition border overflow-hidden',
     'data-id': s.sessionId,
+    'data-project': s.project,
     'data-default-bg': defaultBg,
     onClick: (e: Event) => {
       const target = e.target as HTMLElement | null;
@@ -1369,24 +1414,6 @@ function syncActiveSessionItem(nextItem: HTMLElement | null = null): void {
   activeSessionItemEl = null;
 }
 
-function hasListShapeChanged(prev: SessionSummary[], next: SessionSummary[]): boolean {
-  if (prev.length !== next.length) return true;
-  for (let i = 0; i < prev.length; i++) {
-    const a = prev[i];
-    const b = next[i];
-    if (
-      a.sessionId !== b.sessionId ||
-      a.project !== b.project ||
-      a.firstDisplay !== b.firstDisplay ||
-      a.lastDisplay !== b.lastDisplay ||
-      a.lastTimestamp !== b.lastTimestamp ||
-      a.messageCount !== b.messageCount ||
-      a.archived !== b.archived
-    ) return true;
-  }
-  return false;
-}
-
 function matchesSessionSearch(s: SessionSummary, searchLower: string): boolean {
   if (!searchLower) return true;
   return (
@@ -1449,7 +1476,7 @@ function renderProjectGroup(g: ProjectGroup, groups: ProjectGroup[]): HTMLElemen
     }
   });
   const icon = createEl('span', { className: 'project-group-icon' });
-  icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5A1.5 1.5 0 013.5 3H6l1.5 2h5A1.5 1.5 0 0114 6.5v5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5z"/></svg>';
+  icon.innerHTML = ICONS.folder; // static SVG from icons.ts
   const header = createEl('div', { className: 'project-group-header' }, [chevron, icon, name, startBtn, count]);
   if (projectNameMap[g.path]) header.title = shortPath(g.path);
 
@@ -1470,7 +1497,7 @@ function renderProjectGroup(g: ProjectGroup, groups: ProjectGroup[]): HTMLElemen
         onClick: (e: Event) => {
           e.stopPropagation();
           showAllSessions.add(g.path);
-          renderSessions();
+          requestRenderSessions();
         }
       });
       sessionsDiv.appendChild(showOlderBtn);
@@ -1577,6 +1604,10 @@ function renderDetailHeader(sessionId: string, detail: SessionDetail, headerEl: 
   const chatSearchInput = createEl('input', {
     type: 'text', id: 'chatSearch',
     className: 'mac-input',
+    spellcheck: 'false',
+    autocorrect: 'off',
+    autocapitalize: 'off',
+    autocomplete: 'off',
   }) as HTMLInputElement;
   chatSearchInput.style.cssText = 'width:100%;height:28px;padding:4px 60px 4px 8px;box-sizing:border-box;';
   chatSearchInput.placeholder = t('chatSearchPlaceholder');
@@ -1687,13 +1718,13 @@ function renderDetailMessages(detail: SessionDetail, messagesEl: HTMLElement): v
       }
     }
 
-    const hasImages = Boolean((m as any).images && (m as any).images.length > 0);
+    const hasImages = Boolean(m.images && m.images.length > 0);
     if (!hasText && !hasImages) return els;
 
     const bubbleInner = createEl('div', { className: 'md-content text-sm leading-relaxed break-words' });
     if (hasText) bubbleInner.innerHTML = renderMarkdown(m.content || '');
     if (hasImages) {
-      for (const img of (m as any).images) {
+      for (const img of m.images || []) {
         const imgEl = document.createElement('img');
         imgEl.className = 'chat-inline-img';
         if (img.sourceType === 'base64') imgEl.src = `data:${img.mediaType};base64,${img.data}`;
@@ -1809,10 +1840,10 @@ initResizeHandle(byId);
 const searchClearBtn = byId('searchClearBtn');
 byId('search').addEventListener('input', () => {
   fullTextSearch.onSearchInput();
-  searchClearBtn.style.display = byId('search').value ? '' : 'none';
+  searchClearBtn.style.display = byId<HTMLInputElement>('search').value ? '' : 'none';
 });
 searchClearBtn.addEventListener('click', () => {
-  byId('search').value = '';
+  byId<HTMLInputElement>('search').value = '';
   searchClearBtn.style.display = 'none';
   fullTextSearch.onSearchInput();
 });
@@ -1839,15 +1870,15 @@ if (isTauri && tauriWindow.event) {
     invoke('update_settings', { terminalApp: e.payload });
   });
   listen('menu-lang', (e: any) => {
-    lang = e.payload; localStorage.setItem('csm-lang', lang); applyI18n(); renderSessions();
+    lang = e.payload; localStorage.setItem('csm-lang', lang); applyI18n(); requestRenderSessions();
   });
   listen('search-index-ready', () => {
     fullTextSearch.setIndexReady(true);
-    const indicator = byId('searchIndexIndicator');
+    const indicator = byIdOptional('searchIndexIndicator');
     if (indicator) indicator.remove();
   });
   listen('menu-show-archived', (e: any) => {
-    byId('showArchived').checked = e.payload;
+    byId<HTMLInputElement>('showArchived').checked = e.payload;
     fetchSessions(e.payload);
   });
   listen('menu-zoom', (e: any) => {
@@ -1861,7 +1892,7 @@ if (isTauri && tauriWindow.event) {
 // --- Zoom ---
 let zoomLevel = parseFloat(localStorage.getItem('csm-zoom') || '100');
 function applyZoom() {
-  byId('detailPane').style.zoom = (zoomLevel / 100);
+  byId('detailPane').style.zoom = String(zoomLevel / 100);
 }
 
 initKeyboardNavigation({
@@ -1874,7 +1905,70 @@ applyI18n();
 initPreview();
 applyZoom();
 
+function focusInputAndSelect(el: HTMLInputElement | null): void {
+  if (!el) return;
+  el.focus();
+  el.select();
+}
+
+function clearGlobalSearch(): void {
+  const search = byId<HTMLInputElement>('search');
+  const clearBtn = byId('searchClearBtn');
+  if (!search.value) return;
+  search.value = '';
+  clearBtn.style.display = 'none';
+  fullTextSearch.onSearchInput();
+}
+
+function clearChatSearch(): void {
+  const chatInput = byIdOptional<HTMLInputElement>('chatSearch');
+  if (!chatInput || !chatInput.value) return;
+  chatInput.value = '';
+  chatSearch.doSearch();
+}
+
 document.addEventListener('keydown', (e: KeyboardEvent) => {
+  const active = document.activeElement as HTMLElement | null;
+  const activeTag = active?.tagName;
+  const activeIsTextInput = activeTag === 'INPUT' || activeTag === 'TEXTAREA';
+  const chatInput = byIdOptional<HTMLInputElement>('chatSearch');
+  const globalSearch = byId<HTMLInputElement>('search');
+
+  if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'f') {
+    e.preventDefault();
+    focusInputAndSelect(globalSearch);
+    return;
+  }
+  if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'f') {
+    e.preventDefault();
+    focusInputAndSelect(selectedSession && chatInput ? chatInput : globalSearch);
+    return;
+  }
+  if (e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    focusInputAndSelect(globalSearch);
+    return;
+  }
+  if (e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'g') {
+    if (!chatInput) return;
+    e.preventDefault();
+    if (e.shiftKey) chatSearch.prev();
+    else chatSearch.next();
+    return;
+  }
+  if (e.key === 'Escape' && activeIsTextInput) {
+    if (active === chatInput) {
+      clearChatSearch();
+      (active as HTMLInputElement).blur();
+      return;
+    }
+    if (active === globalSearch) {
+      clearGlobalSearch();
+      (active as HTMLInputElement).blur();
+      return;
+    }
+  }
+
   isPreviewHotkeyPressed = e.altKey && e.shiftKey;
 });
 document.addEventListener('keyup', (e: KeyboardEvent) => {
@@ -1902,15 +1996,42 @@ Promise.all([fetchSessions(), fetchProjects(), fetchSettings()]).then(() => {
 // Auto-refresh every 30s to detect updated sessions
 setInterval(async () => {
   const oldSessions = sessions.slice();
-  const nextSessions = await invoke('list_sessions', { includeArchived: byId('showArchived').checked }) || [];
-  const listChanged = hasListShapeChanged(oldSessions, nextSessions);
+  let nextSessions: SessionSummary[];
+  try {
+    nextSessions = await invokeStrict<SessionSummary[]>('list_sessions', { includeArchived: byId<HTMLInputElement>('showArchived').checked });
+  } catch (error) {
+    console.warn('[sessions] auto-refresh failed', error);
+    return;
+  }
   // Fetch new data but don't re-render while full-text search results are displayed
   sessions = nextSessions;
   if (isFirstLoad) {
     sessions.forEach(s => { knownTimestamps[s.sessionId] = s.lastTimestamp; });
     isFirstLoad = false;
   }
-  if (!fullTextSearch.isSearchActive() && listChanged) renderSessions();
+  if (!fullTextSearch.isSearchActive()) {
+    const identityChanged = hasSessionIdentityOrderChanged(oldSessions, nextSessions, SEVEN_DAYS);
+    if (identityChanged) {
+      requestRenderSessions();
+    } else {
+      const patched = patchSessionListItems({
+        root: byId('sessionList') as HTMLElement,
+        sessions: nextSessions,
+        selectedIds,
+        selectedSession,
+        archivedLabel: t('archived'),
+        msgSuffix: t('msg'),
+        formatTimeAgo: (timestamp: number) => timeAgo(timestamp, lang, t),
+        formatDateTitle: (timestamp: number) => (
+          timestamp
+            ? new Date(timestamp).toLocaleString(lang === 'ja' ? 'ja-JP' : 'en-US')
+            : ''
+        ),
+        isUpdatedSession,
+      });
+      if (!patched) requestRenderSessions();
+    }
+  }
   // Incremental search index update for changed sessions
   const updatedIds = sessions
     .filter(s => {
@@ -1919,6 +2040,8 @@ setInterval(async () => {
     })
     .map(s => s.sessionId);
   if (updatedIds.length > 0) {
-    invoke('update_search_index', { sessionIds: updatedIds });
+    invoke('update_search_index', { sessionIds: updatedIds }).catch((error) => {
+      console.warn('[search] incremental index update failed', error);
+    });
   }
 }, 30000);

@@ -1,7 +1,7 @@
 import { detectLang, translate } from './i18n.js';
-import { createEl } from './dom.js';
+import { createEl, getById } from './dom.js';
 import { getThemePref, applyTheme, watchSystemTheme } from './theme.js';
-import { invoke, isTauri } from './tauri.js';
+import { invoke, invokeStrict, isTauri } from './tauri.js';
 import { isRemoteHost, shortPath, timeAgo } from './utils.js';
 import { getPreviewDetailCached, hidePreview, initPreview, schedulePreviewHide, schedulePreviewShow, setPreviewDetailCached, } from './preview.js';
 import { createChatSearchController } from './chatSearch.js';
@@ -9,8 +9,11 @@ import { createFullTextSearchController } from './fullTextSearch.js';
 import { renderToolBlocks } from './toolRenderer.js';
 import { createSessionActions } from './sessionActions.js';
 import { initKeyboardNavigation, initResizeHandle } from './layoutControls.js';
+import { hasSessionIdentityOrderChanged, patchSessionListItems } from './sessionListView.js';
+import { ICONS } from './icons.js';
 const tauriWindow = window.__TAURI__;
-const byId = (id) => document.getElementById(id);
+const byId = (id) => getById(id);
+const byIdOptional = (id) => document.getElementById(id);
 let lang = detectLang();
 function t(key) { return translate(lang, key); }
 function applyI18n() {
@@ -23,7 +26,7 @@ function applyI18n() {
         el.textContent = t(node.dataset.i18nOption || '');
     });
     byId('search').placeholder = t('searchContent');
-    const cs = byId('chatSearch');
+    const cs = byIdOptional('chatSearch');
     if (cs)
         cs.placeholder = t('chatSearchPlaceholder');
     byId('newSessionBtn').title = lang === 'ja' ? '新規セッション' : 'New Session';
@@ -75,6 +78,7 @@ let renderAbort = null;
 let tokenModal = null;
 let isPreviewHotkeyPressed = false;
 let activeSessionItemEl = null;
+let renderSessionsQueued = false;
 // Search controllers are pure modules; app.ts wires them to current state/getters.
 const chatSearch = createChatSearchController({
     byId,
@@ -106,12 +110,27 @@ const actions = createSessionActions({
     getSessions: () => sessions,
 });
 async function fetchSessions(includeArchived = false) {
-    sessions = await invoke('list_sessions', { includeArchived }) || [];
+    try {
+        sessions = await invokeStrict('list_sessions', { includeArchived });
+    }
+    catch (error) {
+        console.warn('[sessions] fetch failed', error);
+        sessions = [];
+    }
     if (isFirstLoad) {
         sessions.forEach(s => { knownTimestamps[s.sessionId] = s.lastTimestamp; });
         isFirstLoad = false;
     }
-    renderSessions();
+    requestRenderSessions();
+}
+function requestRenderSessions() {
+    if (renderSessionsQueued)
+        return;
+    renderSessionsQueued = true;
+    requestAnimationFrame(() => {
+        renderSessionsQueued = false;
+        renderSessions();
+    });
 }
 function isUpdatedSession(s) {
     if (!(s.sessionId in knownTimestamps))
@@ -119,18 +138,35 @@ function isUpdatedSession(s) {
     return s.lastTimestamp > knownTimestamps[s.sessionId]; // timestamp changed
 }
 async function fetchProjects() {
-    projects = await invoke('list_projects') || [];
+    try {
+        projects = await invokeStrict('list_projects');
+    }
+    catch (error) {
+        console.warn('[projects] fetch failed', error);
+        projects = [];
+    }
     projectNameMap = {};
     projects.forEach(p => { if (p.name)
         projectNameMap[p.path] = p.name; });
     renderProjects();
 }
 async function fetchDetail(sessionId) {
-    const detail = await invoke('get_session_detail', { sessionId });
-    return detail;
+    try {
+        return await invokeStrict('get_session_detail', { sessionId });
+    }
+    catch (error) {
+        console.warn('[detail] fetch failed', error);
+        return null;
+    }
 }
 async function fetchSettings() {
-    serverSettings = await invoke('get_settings') || {};
+    try {
+        serverSettings = await invokeStrict('get_settings');
+    }
+    catch (error) {
+        console.warn('[settings] fetch failed', error);
+        serverSettings = {};
+    }
 }
 function projectDisplayName(path) {
     return projectNameMap[path] || shortPath(path).split('/').pop() || shortPath(path);
@@ -189,23 +225,46 @@ function renderProjectCard(p, iconUri) {
     const pathEl = createEl('div', { className: 'startup-card-path', textContent: shortPath(p.path) });
     pathEl.title = p.path;
     const actionsRow = createEl('div', { className: 'startup-card-actions' });
-    const newBtn = createEl('button', {
-        className: 'mac-btn', textContent: t('newSession'),
-        onClick: () => { invoke('start_new_session_in_project', { project: p.path }); },
-    });
-    actionsRow.appendChild(newBtn);
-    if (p.lastSessionId) {
-        const resumeBtn = createEl('button', {
-            className: 'mac-btn mac-btn-primary', textContent: t('resumeLast'),
-            onClick: () => { actions.resumeInTerminal(p.lastSessionId); },
+    const makeIconBtn = (title, iconSvg, onClick, primary = false) => {
+        const btn = createEl('button', {
+            className: `mac-btn${primary ? ' mac-btn-primary' : ''}`,
+            title,
+            'aria-label': title,
+            onClick: (e) => {
+                e.stopPropagation();
+                onClick();
+            },
         });
-        actionsRow.appendChild(resumeBtn);
+        btn.style.cssText = 'width:28px;height:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;';
+        btn.innerHTML = iconSvg;
+        return btn;
+    };
+    const newIcon = ICONS.plus;
+    const resumeIcon = ICONS.refresh;
+    const terminalIcon = ICONS.terminal;
+    const finderIcon = ICONS.folderOpen;
+    const readmeIcon = ICONS.fileText;
+    actionsRow.appendChild(makeIconBtn(t('newSession'), newIcon, () => {
+        void invoke('start_new_session_in_project', { project: p.path });
+    }));
+    if (p.lastSessionId) {
+        actionsRow.appendChild(makeIconBtn(t('resumeLast'), resumeIcon, () => {
+            void actions.resumeInTerminal(p.lastSessionId);
+        }, true));
     }
-    const readmeBtn = createEl('button', {
-        className: 'mac-btn', textContent: t('readme'),
-        onClick: () => { openReadmeWindow(p.path, name); },
-    });
-    actionsRow.appendChild(readmeBtn);
+    actionsRow.appendChild(makeIconBtn(t('openProjectTerminal'), terminalIcon, async () => {
+        const result = await invoke('open_project_in_terminal', { project: p.path });
+        if (!result?.ok)
+            actions.showToast(t('toastError') + (result?.error || ''));
+    }));
+    actionsRow.appendChild(makeIconBtn(t('openProjectFinder'), finderIcon, async () => {
+        const result = await invoke('open_path', { path: p.path });
+        if (result === null)
+            actions.showToast(t('toastError'));
+    }));
+    actionsRow.appendChild(makeIconBtn(t('readme'), readmeIcon, () => {
+        void openReadmeWindow(p.path, name);
+    }));
     info.appendChild(nameEl);
     info.appendChild(pathEl);
     info.appendChild(actionsRow);
@@ -326,7 +385,7 @@ function focusProjectInSidebar(projectPath) {
         const searchEl = byId('search');
         if (searchEl.value) {
             searchEl.value = '';
-            renderSessions();
+            requestRenderSessions();
         }
         requestAnimationFrame(findAndFocus);
     }
@@ -1138,39 +1197,40 @@ function renderSessionItem(s) {
     });
     if (selectedIds.has(s.sessionId))
         cb.checked = true;
-    const firstMsg = createEl('p', { className: 'text-sm leading-snug truncate', textContent: s.firstDisplay });
+    const firstMsg = createEl('p', { className: 'session-first text-sm leading-snug truncate', textContent: s.firstDisplay });
     firstMsg.style.color = 'var(--text)';
     const lastMsg = (s.lastDisplay && s.lastDisplay !== s.firstDisplay)
-        ? createEl('p', { className: 'text-xs leading-snug truncate mt-0.5', textContent: s.lastDisplay })
+        ? createEl('p', { className: 'session-last text-xs leading-snug truncate mt-0.5', textContent: s.lastDisplay })
         : null;
     if (lastMsg)
         lastMsg.style.color = 'var(--text-muted)';
     const dot = () => { const sp = createEl('span', { className: 'text-[10px] flex-shrink-0', textContent: '·' }); sp.style.color = 'var(--text-dot)'; return sp; };
-    const meta = (txt) => { const sp = createEl('span', { className: 'text-[10px] flex-shrink-0', textContent: txt }); sp.style.color = 'var(--text-faint)'; return sp; };
-    const metaParts = [meta(timeAgo(s.lastTimestamp, lang, t)), dot(), meta(s.messageCount + t('msg'))];
+    const meta = (txt, cls = '') => { const sp = createEl('span', { className: `text-[10px] flex-shrink-0 ${cls}`.trim(), textContent: txt }); sp.style.color = 'var(--text-faint)'; return sp; };
+    const metaParts = [meta(timeAgo(s.lastTimestamp, lang, t), 'session-meta-time'), dot(), meta(s.messageCount + t('msg'), 'session-meta-count')];
     if (s.archived) {
-        const sp = createEl('span', { className: 'text-[10px] flex-shrink-0', textContent: t('archived') });
+        const sp = createEl('span', { className: 'session-meta-archived text-[10px] flex-shrink-0', textContent: t('archived') });
         sp.style.color = 'var(--text-faint)';
         metaParts.push(sp);
     }
     const updated = isUpdatedSession(s);
-    const metaDiv = createEl('div', { className: 'mt-1 overflow-hidden' }, metaParts);
+    const metaDiv = createEl('div', { className: 'session-meta mt-1 overflow-hidden' }, metaParts);
     metaDiv.style.cssText = 'display:grid;grid-auto-flow:column;grid-auto-columns:max-content;align-items:center;gap:8px;';
-    const textDiv = createEl('div', { className: 'min-w-0 overflow-hidden' }, [firstMsg, lastMsg, metaDiv].filter(Boolean));
+    const textDiv = createEl('div', { className: 'session-text min-w-0 overflow-hidden' }, [firstMsg, lastMsg, metaDiv].filter(Boolean));
     const rowChildren = [cb];
     if (updated) {
-        const updDot = createEl('span', { className: 'flex-shrink-0 mt-1.5' });
+        const updDot = createEl('span', { className: 'session-updated-dot flex-shrink-0 mt-1.5' });
         updDot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--updated-dot);';
         rowChildren.push(updDot);
     }
     rowChildren.push(textDiv);
-    const row = createEl('div', { className: 'overflow-hidden' }, rowChildren);
+    const row = createEl('div', { className: 'session-row overflow-hidden' }, rowChildren);
     row.style.cssText = 'display:grid;grid-template-columns:' + (updated ? 'auto auto 1fr' : 'auto 1fr') + ';align-items:start;gap:8px;';
     const isActive = selectedSession === s.sessionId;
     const defaultBg = updated ? 'var(--updated-bg)' : 'transparent';
     const item = createEl('div', {
         className: 'session-item p-3 rounded cursor-default transition border overflow-hidden',
         'data-id': s.sessionId,
+        'data-project': s.project,
         'data-default-bg': defaultBg,
         onClick: (e) => {
             const target = e.target;
@@ -1243,23 +1303,6 @@ function syncActiveSessionItem(nextItem = null) {
     }
     activeSessionItemEl = null;
 }
-function hasListShapeChanged(prev, next) {
-    if (prev.length !== next.length)
-        return true;
-    for (let i = 0; i < prev.length; i++) {
-        const a = prev[i];
-        const b = next[i];
-        if (a.sessionId !== b.sessionId ||
-            a.project !== b.project ||
-            a.firstDisplay !== b.firstDisplay ||
-            a.lastDisplay !== b.lastDisplay ||
-            a.lastTimestamp !== b.lastTimestamp ||
-            a.messageCount !== b.messageCount ||
-            a.archived !== b.archived)
-            return true;
-    }
-    return false;
-}
 function matchesSessionSearch(s, searchLower) {
     if (!searchLower)
         return true;
@@ -1317,7 +1360,7 @@ function renderProjectGroup(g, groups) {
         }
     });
     const icon = createEl('span', { className: 'project-group-icon' });
-    icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5A1.5 1.5 0 013.5 3H6l1.5 2h5A1.5 1.5 0 0114 6.5v5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5z"/></svg>';
+    icon.innerHTML = ICONS.folder; // static SVG from icons.ts
     const header = createEl('div', { className: 'project-group-header' }, [chevron, icon, name, startBtn, count]);
     if (projectNameMap[g.path])
         header.title = shortPath(g.path);
@@ -1337,7 +1380,7 @@ function renderProjectGroup(g, groups) {
                 onClick: (e) => {
                     e.stopPropagation();
                     showAllSessions.add(g.path);
-                    renderSessions();
+                    requestRenderSessions();
                 }
             });
             sessionsDiv.appendChild(showOlderBtn);
@@ -1439,6 +1482,10 @@ function renderDetailHeader(sessionId, detail, headerEl) {
     const chatSearchInput = createEl('input', {
         type: 'text', id: 'chatSearch',
         className: 'mac-input',
+        spellcheck: 'false',
+        autocorrect: 'off',
+        autocapitalize: 'off',
+        autocomplete: 'off',
     });
     chatSearchInput.style.cssText = 'width:100%;height:28px;padding:4px 60px 4px 8px;box-sizing:border-box;';
     chatSearchInput.placeholder = t('chatSearchPlaceholder');
@@ -1545,7 +1592,7 @@ function renderDetailMessages(detail, messagesEl) {
         if (hasText)
             bubbleInner.innerHTML = renderMarkdown(m.content || '');
         if (hasImages) {
-            for (const img of m.images) {
+            for (const img of m.images || []) {
                 const imgEl = document.createElement('img');
                 imgEl.className = 'chat-inline-img';
                 if (img.sourceType === 'base64')
@@ -1694,11 +1741,11 @@ if (isTauri && tauriWindow.event) {
         lang = e.payload;
         localStorage.setItem('csm-lang', lang);
         applyI18n();
-        renderSessions();
+        requestRenderSessions();
     });
     listen('search-index-ready', () => {
         fullTextSearch.setIndexReady(true);
-        const indicator = byId('searchIndexIndicator');
+        const indicator = byIdOptional('searchIndexIndicator');
         if (indicator)
             indicator.remove();
     });
@@ -1723,7 +1770,7 @@ if (isTauri && tauriWindow.event) {
 // --- Zoom ---
 let zoomLevel = parseFloat(localStorage.getItem('csm-zoom') || '100');
 function applyZoom() {
-    byId('detailPane').style.zoom = (zoomLevel / 100);
+    byId('detailPane').style.zoom = String(zoomLevel / 100);
 }
 initKeyboardNavigation({
     byId,
@@ -1733,7 +1780,71 @@ applyTheme(themePref);
 applyI18n();
 initPreview();
 applyZoom();
+function focusInputAndSelect(el) {
+    if (!el)
+        return;
+    el.focus();
+    el.select();
+}
+function clearGlobalSearch() {
+    const search = byId('search');
+    const clearBtn = byId('searchClearBtn');
+    if (!search.value)
+        return;
+    search.value = '';
+    clearBtn.style.display = 'none';
+    fullTextSearch.onSearchInput();
+}
+function clearChatSearch() {
+    const chatInput = byIdOptional('chatSearch');
+    if (!chatInput || !chatInput.value)
+        return;
+    chatInput.value = '';
+    chatSearch.doSearch();
+}
 document.addEventListener('keydown', (e) => {
+    const active = document.activeElement;
+    const activeTag = active?.tagName;
+    const activeIsTextInput = activeTag === 'INPUT' || activeTag === 'TEXTAREA';
+    const chatInput = byIdOptional('chatSearch');
+    const globalSearch = byId('search');
+    if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        focusInputAndSelect(globalSearch);
+        return;
+    }
+    if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        focusInputAndSelect(selectedSession && chatInput ? chatInput : globalSearch);
+        return;
+    }
+    if (e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        focusInputAndSelect(globalSearch);
+        return;
+    }
+    if (e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'g') {
+        if (!chatInput)
+            return;
+        e.preventDefault();
+        if (e.shiftKey)
+            chatSearch.prev();
+        else
+            chatSearch.next();
+        return;
+    }
+    if (e.key === 'Escape' && activeIsTextInput) {
+        if (active === chatInput) {
+            clearChatSearch();
+            active.blur();
+            return;
+        }
+        if (active === globalSearch) {
+            clearGlobalSearch();
+            active.blur();
+            return;
+        }
+    }
     isPreviewHotkeyPressed = e.altKey && e.shiftKey;
 });
 document.addEventListener('keyup', (e) => {
@@ -1762,16 +1873,43 @@ Promise.all([fetchSessions(), fetchProjects(), fetchSettings()]).then(() => {
 // Auto-refresh every 30s to detect updated sessions
 setInterval(async () => {
     const oldSessions = sessions.slice();
-    const nextSessions = await invoke('list_sessions', { includeArchived: byId('showArchived').checked }) || [];
-    const listChanged = hasListShapeChanged(oldSessions, nextSessions);
+    let nextSessions;
+    try {
+        nextSessions = await invokeStrict('list_sessions', { includeArchived: byId('showArchived').checked });
+    }
+    catch (error) {
+        console.warn('[sessions] auto-refresh failed', error);
+        return;
+    }
     // Fetch new data but don't re-render while full-text search results are displayed
     sessions = nextSessions;
     if (isFirstLoad) {
         sessions.forEach(s => { knownTimestamps[s.sessionId] = s.lastTimestamp; });
         isFirstLoad = false;
     }
-    if (!fullTextSearch.isSearchActive() && listChanged)
-        renderSessions();
+    if (!fullTextSearch.isSearchActive()) {
+        const identityChanged = hasSessionIdentityOrderChanged(oldSessions, nextSessions, SEVEN_DAYS);
+        if (identityChanged) {
+            requestRenderSessions();
+        }
+        else {
+            const patched = patchSessionListItems({
+                root: byId('sessionList'),
+                sessions: nextSessions,
+                selectedIds,
+                selectedSession,
+                archivedLabel: t('archived'),
+                msgSuffix: t('msg'),
+                formatTimeAgo: (timestamp) => timeAgo(timestamp, lang, t),
+                formatDateTitle: (timestamp) => (timestamp
+                    ? new Date(timestamp).toLocaleString(lang === 'ja' ? 'ja-JP' : 'en-US')
+                    : ''),
+                isUpdatedSession,
+            });
+            if (!patched)
+                requestRenderSessions();
+        }
+    }
     // Incremental search index update for changed sessions
     const updatedIds = sessions
         .filter(s => {
@@ -1780,6 +1918,8 @@ setInterval(async () => {
     })
         .map(s => s.sessionId);
     if (updatedIds.length > 0) {
-        invoke('update_search_index', { sessionIds: updatedIds });
+        invoke('update_search_index', { sessionIds: updatedIds }).catch((error) => {
+            console.warn('[search] incremental index update failed', error);
+        });
     }
 }, 30000);
