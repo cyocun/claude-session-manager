@@ -1,3 +1,5 @@
+import { getSearchTokenFallback, getSearchVariants } from './searchUtils.js';
+
 export type ChatSearchDeps = {
   byId: (id: string) => any;
   t: (key: string) => string;
@@ -43,6 +45,64 @@ export function createChatSearchController(deps: ChatSearchDeps) {
     }
   }
 
+  function getSearchRoots(messagesEl: HTMLElement): HTMLElement[] {
+    return Array.from(
+      messagesEl.querySelectorAll('.bubble-user .md-content, .bubble-assistant .md-content'),
+    ) as HTMLElement[];
+  }
+
+  function collectMatches(
+    roots: HTMLElement[],
+    query: string,
+  ): Array<{ node: Text; start: number; length: number }> {
+    return collectMatchesForNeedles(roots, [query]);
+  }
+
+  function collectMatchesForNeedles(
+    roots: HTMLElement[],
+    needles: string[],
+  ): Array<{ node: Text; start: number; length: number }> {
+    const matches: Array<{ node: Text; start: number; length: number }> = [];
+    const uniqueNeedles = Array.from(new Set(needles.map((q) => q.trim()).filter(Boolean)));
+    if (uniqueNeedles.length === 0) return matches;
+    const lowerNeedles = uniqueNeedles.map((n) => n.toLocaleLowerCase());
+
+    for (const root of roots) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let node = walker.nextNode() as Text | null;
+      while (node) {
+        const text = node.textContent || '';
+        const lower = text.toLocaleLowerCase();
+        const nodeRanges: Array<{ start: number; length: number }> = [];
+        for (const needle of lowerNeedles) {
+          let idx = 0;
+          while ((idx = lower.indexOf(needle, idx)) !== -1) {
+            nodeRanges.push({ start: idx, length: needle.length });
+            idx += needle.length;
+          }
+        }
+        nodeRanges.sort((a, b) => (a.start - b.start) || (b.length - a.length));
+        let nextAllowed = 0;
+        for (const range of nodeRanges) {
+          if (range.start < nextAllowed) continue;
+          matches.push({ node, start: range.start, length: range.length });
+          nextAllowed = range.start + range.length;
+        }
+        node = walker.nextNode() as Text | null;
+      }
+    }
+    return matches;
+  }
+
+  function filterRootsContainingAllTokens(roots: HTMLElement[], tokens: string[]): HTMLElement[] {
+    if (tokens.length <= 1) return roots;
+    const lowerTokens = tokens.map((t) => t.toLocaleLowerCase());
+    return roots.filter((root) => {
+      const text = (root.textContent || '').toLocaleLowerCase();
+      return lowerTokens.every((token) => text.includes(token));
+    });
+  }
+
   function doSearch(): void {
     if (!isAllMessagesRendered() && window._flushRender) window._flushRender();
 
@@ -65,19 +125,20 @@ export function createChatSearchController(deps: ChatSearchDeps) {
       return;
     }
 
-    const walker = document.createTreeWalker(messagesEl, NodeFilter.SHOW_TEXT);
-    const matches: Array<{ node: Text; start: number; length: number }> = [];
-    let node = walker.nextNode() as Text | null;
-    while (node) {
-      const text = node.textContent || '';
-      const lower = text.toLowerCase();
-      const qLower = q.toLowerCase();
-      let idx = 0;
-      while ((idx = lower.indexOf(qLower, idx)) !== -1) {
-        matches.push({ node, start: idx, length: q.length });
-        idx += q.length;
+    const roots = getSearchRoots(messagesEl);
+    const variants = getSearchVariants(q);
+    let matches: Array<{ node: Text; start: number; length: number }> = [];
+    for (const variant of variants) {
+      if (variant.length < 2) continue;
+      matches = collectMatches(roots, variant);
+      if (matches.length > 0) break;
+    }
+    if (matches.length === 0) {
+      const tokenFallback = getSearchTokenFallback(q).filter((token) => token.length >= 2);
+      if (tokenFallback.length > 0) {
+        const filteredRoots = filterRootsContainingAllTokens(roots, tokenFallback);
+        matches = collectMatchesForNeedles(filteredRoots, tokenFallback);
       }
-      node = walker.nextNode() as Text | null;
     }
 
     for (let i = matches.length - 1; i >= 0; i--) {
@@ -120,7 +181,14 @@ export function createChatSearchController(deps: ChatSearchDeps) {
   function scrollToMessageIndex(messageIndex: number): void {
     const messagesEl = byId('detailMessages') as HTMLElement;
     if (!isAllMessagesRendered() && window._flushRender) window._flushRender();
-    const el = messagesEl.querySelector(`[data-msg-idx="${messageIndex}"]`) as HTMLElement | null;
+    const candidates = Array.from(
+      messagesEl.querySelectorAll(`[data-msg-idx="${messageIndex}"]`),
+    ) as HTMLElement[];
+    if (candidates.length === 0) return;
+    const el = candidates.find((c) => c.querySelector('mark.chat-hit'))
+      || candidates.find((c) => c.classList.contains('bubble-user') || c.classList.contains('bubble-assistant'))
+      || candidates.find((c) => c.offsetHeight > 0)
+      || candidates[0];
     if (!el) return;
     el.scrollIntoView({ block: 'center' });
     el.style.outline = '2px solid var(--accent)';
