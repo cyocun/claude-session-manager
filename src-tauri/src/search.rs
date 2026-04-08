@@ -37,6 +37,13 @@ impl SearchIndex {
     pub fn new(index_dir: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
         std::fs::create_dir_all(&index_dir)?;
 
+        // This is a single-process app: any leftover writer lock means a previous crash
+        // that may have corrupted the index. Wipe and rebuild from scratch.
+        if index_dir.join(".tantivy-writer.lock").exists() {
+            let _ = std::fs::remove_dir_all(&index_dir);
+            std::fs::create_dir_all(&index_dir)?;
+        }
+
         let mut schema_builder = Schema::builder();
         let f_session_id = schema_builder.add_text_field("session_id", STRING | STORED);
         let f_project = schema_builder.add_text_field("project", STRING | STORED);
