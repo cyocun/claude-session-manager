@@ -1759,7 +1759,14 @@ initResizeHandle(byId);
 
 // --- Init ---
 
+const searchClearBtn = byId('searchClearBtn');
 byId('search').addEventListener('input', () => {
+  fullTextSearch.onSearchInput();
+  searchClearBtn.style.display = byId('search').value ? '' : 'none';
+});
+searchClearBtn.addEventListener('click', () => {
+  byId('search').value = '';
+  searchClearBtn.style.display = 'none';
   fullTextSearch.onSearchInput();
 });
 byId('homeBtn').addEventListener('click', () => {

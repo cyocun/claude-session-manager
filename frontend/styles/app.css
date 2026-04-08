@@ -98,6 +98,15 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
       background-repeat: no-repeat; background-position: center;
     }
 
+    .search-clear-btn {
+      position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      width: 18px; height: 18px; padding: 0; border: none; border-radius: 50%;
+      background: var(--btn-bg); color: var(--text-muted);
+      font-size: 14px; line-height: 1; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .search-clear-btn:hover { background: var(--btn-bg-hover); color: var(--text); }
+
     /* macOS sidebar vibrancy */
     .macos-sidebar {
       background: rgba(246,246,246,0.85);

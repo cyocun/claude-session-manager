@@ -37,12 +37,8 @@ impl SearchIndex {
     pub fn new(index_dir: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
         std::fs::create_dir_all(&index_dir)?;
 
-        // This is a single-process app: any leftover writer lock means a previous crash
-        // that may have corrupted the index. Wipe and rebuild from scratch.
-        if index_dir.join(".tantivy-writer.lock").exists() {
-            let _ = std::fs::remove_dir_all(&index_dir);
-            std::fs::create_dir_all(&index_dir)?;
-        }
+        // This is a single-process app: any leftover writer lock is stale.
+        let _ = std::fs::remove_file(index_dir.join(".tantivy-writer.lock"));
 
         let mut schema_builder = Schema::builder();
         let f_session_id = schema_builder.add_text_field("session_id", STRING | STORED);
@@ -132,10 +128,22 @@ impl SearchIndex {
         project: &str,
         session_file: &Path,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.index_session_no_commit(session_id, project, session_file)?;
+        self.writer.lock().unwrap().commit()?;
+        Ok(())
+    }
+
+    /// Index a session without committing — caller is responsible for commit.
+    fn index_session_no_commit(
+        &self,
+        session_id: &str,
+        project: &str,
+        session_file: &Path,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let file = File::open(session_file)?;
         let messages = Self::extract_searchable_messages(&file);
 
-        let mut writer = self.writer.lock().unwrap();
+        let writer = self.writer.lock().unwrap();
 
         // Delete existing documents for this session
         let term = tantivy::Term::from_field_text(self.f_session_id, session_id);
@@ -153,8 +161,6 @@ impl SearchIndex {
                 self.f_message_index => msg.message_index as u64,
             ))?;
         }
-
-        writer.commit()?;
 
         // Update meta
         let file_size = std::fs::metadata(session_file).map(|m| m.len()).unwrap_or(0);
@@ -375,13 +381,14 @@ impl SearchIndex {
             self.total_sessions.lock().unwrap()
         );
 
-        // Index sequentially (writer is single-threaded)
+        // Index sequentially without per-session commit, then batch commit
         for (session_id, project, session_file) in &entries {
-            if let Err(e) = self.index_session(session_id, project, session_file) {
+            if let Err(e) = self.index_session_no_commit(session_id, project, session_file) {
                 eprintln!("Failed to index session {}: {}", session_id, e);
             }
         }
 
+        self.writer.lock().unwrap().commit()?;
         self.save_meta();
         self.is_indexing.store(false, Ordering::SeqCst);
 
