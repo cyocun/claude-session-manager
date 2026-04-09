@@ -11,7 +11,7 @@ import {
   schedulePreviewShow,
   setPreviewDetailCached,
 } from './preview.js';
-import { createChatSearchController } from './chatSearch.js';
+import { createChatSearchController, type ChatSearchFilter } from './chatSearch.js';
 import { createFullTextSearchController } from './fullTextSearch.js';
 import { renderToolBlocks } from './toolRenderer.js';
 import { createSessionActions } from './sessionActions.js';
@@ -1619,19 +1619,57 @@ function renderDetailHeader(sessionId: string, detail: SessionDetail, headerEl: 
   prevBtn.style.cssText = 'font-size:9px;color:var(--text-muted);padding:0 2px;line-height:1;cursor:default;background:none;border:none;pointer-events:auto;';
   const nextBtn = createEl('button', { id: 'chatSearchNext', className: 'hidden', textContent: '\u25BC' });
   nextBtn.style.cssText = 'font-size:9px;color:var(--text-muted);padding:0 2px;line-height:1;cursor:default;background:none;border:none;pointer-events:auto;';
+  const chatClearBtn = createEl('button', { id: 'chatSearchClear', textContent: '\u00D7' });
+  chatClearBtn.style.cssText = 'font-size:13px;color:var(--text-muted);padding:0 2px;line-height:1;cursor:default;background:none;border:none;pointer-events:auto;display:none;';
 
-  const searchOverlay = createEl('div', {}, [chatCount, prevBtn, nextBtn]);
+  const searchOverlay = createEl('div', {}, [chatCount, prevBtn, nextBtn, chatClearBtn]);
   searchOverlay.style.cssText = 'display:grid;grid-auto-flow:column;grid-auto-columns:max-content;align-items:center;gap:2px;position:absolute;right:6px;top:50%;transform:translateY(-50%);pointer-events:auto;';
   const searchGroup = createEl('div', {}, [chatSearchInput, searchOverlay]);
   searchGroup.style.cssText = 'display:grid;position:relative;width:200px;justify-self:end;';
-  const headerRow = createEl('div', { className: 'min-w-0' }, [pathLine, searchGroup]);
-  headerRow.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) 200px;align-items:center;gap:12px;';
+
+  // Filter segmented control: All / User / AI
+  type FilterDef = { key: ChatSearchFilter; label: string };
+  const filters: FilterDef[] = [
+    { key: 'all', label: t('chatFilterAll') },
+    { key: 'assistant', label: t('chatFilterAI') },
+    { key: 'user', label: t('chatFilterUser') },
+  ];
+  const filterBar = createEl('div', { className: 'mac-segmented' });
+  const filterBtns: HTMLElement[] = [];
+  for (const f of filters) {
+    const btn = createEl('button', {
+      className: 'mac-segmented-btn' + (f.key === chatSearch.getFilter() ? ' active' : ''),
+      textContent: f.label,
+    });
+    btn.addEventListener('click', () => {
+      chatSearch.setFilter(f.key);
+      filterBtns.forEach((b, i) => {
+        b.classList.toggle('active', filters[i].key === f.key);
+      });
+      chatSearch.doSearch();
+    });
+    filterBtns.push(btn);
+    filterBar.appendChild(btn);
+  }
+
+  const headerRow = createEl('div', { className: 'min-w-0' }, [pathLine, filterBar, searchGroup]);
+  headerRow.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) auto 200px;align-items:center;gap:8px;';
   const headerRow2 = createEl('div', {});
   headerRow2.style.height = '22px';
   headerEl.replaceChildren(headerRow, headerRow2);
 
   let chatSearchTimer: ReturnType<typeof setTimeout> | undefined;
-  chatSearchInput.addEventListener('input', () => { clearTimeout(chatSearchTimer); chatSearchTimer = setTimeout(() => chatSearch.doSearch(), 200); });
+  chatSearchInput.addEventListener('input', () => {
+    chatClearBtn.style.display = chatSearchInput.value ? 'block' : 'none';
+    clearTimeout(chatSearchTimer);
+    chatSearchTimer = setTimeout(() => chatSearch.doSearch(), 200);
+  });
+  chatClearBtn.addEventListener('click', () => {
+    chatSearchInput.value = '';
+    chatClearBtn.style.display = 'none';
+    chatSearch.doSearch();
+    chatSearchInput.focus();
+  });
   nextBtn.addEventListener('click', () => chatSearch.next());
   prevBtn.addEventListener('click', () => chatSearch.prev());
   chatSearchInput.addEventListener('keydown', (e) => {
@@ -1640,6 +1678,7 @@ function renderDetailHeader(sessionId: string, detail: SessionDetail, headerEl: 
       const target = e.target as HTMLInputElement | null;
       if (target) {
         target.value = '';
+        chatClearBtn.style.display = 'none';
         chatSearch.doSearch();
         target.blur();
       }

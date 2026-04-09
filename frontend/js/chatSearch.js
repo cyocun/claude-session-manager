@@ -3,6 +3,7 @@ export function createChatSearchController(deps) {
     const { byId, t, isAllMessagesRendered } = deps;
     let chatHits = [];
     let chatHitIndex = -1;
+    let searchFilter = 'all';
     function reset() {
         chatHits = [];
         chatHitIndex = -1;
@@ -35,8 +36,15 @@ export function createChatSearchController(deps) {
         }
     }
     function getSearchRoots(messagesEl) {
-        return Array.from(messagesEl.querySelectorAll('.bubble-user .md-content, .bubble-assistant .md-content'));
+        const selectors = {
+            all: '.bubble-user .md-content, .bubble-assistant .md-content',
+            user: '.bubble-user .md-content',
+            assistant: '.bubble-assistant .md-content',
+        };
+        return Array.from(messagesEl.querySelectorAll(selectors[searchFilter]));
     }
+    function getFilter() { return searchFilter; }
+    function setFilter(f) { searchFilter = f; }
     function collectMatches(roots, query) {
         return collectMatchesForNeedles(roots, [query]);
     }
@@ -209,5 +217,7 @@ export function createChatSearchController(deps) {
         next,
         prev,
         scrollToMessageIndex,
+        getFilter,
+        setFilter,
     };
 }

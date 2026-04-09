@@ -101,6 +101,9 @@ export const I18N = {
     summarizePrompt: 'このセッションの内容を要約して',
     home: 'ホーム',
     activatedWindow: '実行中のウィンドウをアクティブにしました',
+    chatFilterAll: 'All',
+    chatFilterUser: 'User',
+    chatFilterAI: 'AI',
   },
   en: {
     searchPlaceholder: 'Search...',
@@ -204,6 +207,9 @@ export const I18N = {
     summarizePrompt: 'Summarize this session',
     home: 'Home',
     activatedWindow: 'Activated existing window',
+    chatFilterAll: 'All',
+    chatFilterUser: 'User',
+    chatFilterAI: 'AI',
   },
 } as const;
 

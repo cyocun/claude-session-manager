@@ -1,5 +1,7 @@
 import { getSearchTokenFallback, getSearchVariants } from './searchUtils.js';
 
+export type ChatSearchFilter = 'all' | 'user' | 'assistant';
+
 export type ChatSearchDeps = {
   byId: (id: string) => any;
   t: (key: string) => string;
@@ -11,6 +13,7 @@ export function createChatSearchController(deps: ChatSearchDeps) {
 
   let chatHits: HTMLElement[] = [];
   let chatHitIndex = -1;
+  let searchFilter: ChatSearchFilter = 'all';
 
   function reset(): void {
     chatHits = [];
@@ -46,10 +49,18 @@ export function createChatSearchController(deps: ChatSearchDeps) {
   }
 
   function getSearchRoots(messagesEl: HTMLElement): HTMLElement[] {
+    const selectors: Record<ChatSearchFilter, string> = {
+      all: '.bubble-user .md-content, .bubble-assistant .md-content',
+      user: '.bubble-user .md-content',
+      assistant: '.bubble-assistant .md-content',
+    };
     return Array.from(
-      messagesEl.querySelectorAll('.bubble-user .md-content, .bubble-assistant .md-content'),
+      messagesEl.querySelectorAll(selectors[searchFilter]),
     ) as HTMLElement[];
   }
+
+  function getFilter(): ChatSearchFilter { return searchFilter; }
+  function setFilter(f: ChatSearchFilter): void { searchFilter = f; }
 
   function collectMatches(
     roots: HTMLElement[],
@@ -225,5 +236,7 @@ export function createChatSearchController(deps: ChatSearchDeps) {
     next,
     prev,
     scrollToMessageIndex,
+    getFilter,
+    setFilter,
   };
 }
