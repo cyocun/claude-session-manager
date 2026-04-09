@@ -88,7 +88,7 @@ fn main() {
                 .unwrap_or_default()
                 .join("com.cyocun.claude-session-manager");
             let index_dir = data_dir.join("search-index");
-            let search_index = match search::SearchIndex::new(index_dir) {
+            let search_index = match csm_core::search::SearchIndex::new(index_dir) {
                 Ok(idx) => Arc::new(idx),
                 Err(e) => {
                     eprintln!("Failed to create search index: {}", e);
@@ -96,7 +96,7 @@ fn main() {
                     let index_dir = data_dir.join("search-index");
                     let _ = std::fs::remove_dir_all(&index_dir);
                     Arc::new(
-                        search::SearchIndex::new(index_dir)
+                        csm_core::search::SearchIndex::new(index_dir)
                             .expect("Failed to create search index after cleanup"),
                     )
                 }
