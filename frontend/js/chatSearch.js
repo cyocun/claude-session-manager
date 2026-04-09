@@ -40,6 +40,28 @@ export function createChatSearchController(deps) {
     function collectMatches(roots, query) {
         return collectMatchesForNeedles(roots, [query]);
     }
+    function isVisibleTextNode(node) {
+        // Walk up the tree to check all ancestors up to the root
+        let el = node.parentElement;
+        while (el) {
+            const tag = el.tagName;
+            // Skip alt/title text from media elements
+            if (tag === 'IMG' || tag === 'VIDEO' || tag === 'AUDIO' || tag === 'SOURCE')
+                return false;
+            // Skip hidden containers
+            if (el.style.display === 'none' || el.style.visibility === 'hidden')
+                return false;
+            if (el.style.height === '0' || el.style.height === '0px')
+                return false;
+            if (el.offsetHeight === 0 && el.offsetWidth === 0)
+                return false;
+            // Stop at the search root (.md-content)
+            if (el.classList.contains('md-content'))
+                break;
+            el = el.parentElement;
+        }
+        return true;
+    }
     function collectMatchesForNeedles(roots, needles) {
         const matches = [];
         const uniqueNeedles = Array.from(new Set(needles.map((q) => q.trim()).filter(Boolean)));
@@ -50,6 +72,10 @@ export function createChatSearchController(deps) {
             const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
             let node = walker.nextNode();
             while (node) {
+                if (!isVisibleTextNode(node)) {
+                    node = walker.nextNode();
+                    continue;
+                }
                 const text = node.textContent || '';
                 const lower = text.toLocaleLowerCase();
                 const nodeRanges = [];

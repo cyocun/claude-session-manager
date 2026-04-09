@@ -1709,7 +1709,7 @@ initResizeHandle(byId);
 const searchClearBtn = byId('searchClearBtn');
 byId('search').addEventListener('input', () => {
     fullTextSearch.onSearchInput();
-    searchClearBtn.style.display = byId('search').value ? '' : 'none';
+    searchClearBtn.style.display = byId('search').value ? 'flex' : 'none';
 });
 searchClearBtn.addEventListener('click', () => {
     byId('search').value = '';
