@@ -1,5 +1,5 @@
-use crate::models::{SearchHit, SearchIndexStatus};
-use crate::search::SearchIndex;
+use csm_core::models::{SearchHit, SearchIndexStatus};
+use csm_core::search::SearchIndex;
 use std::sync::Arc;
 
 #[tauri::command]
