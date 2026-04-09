@@ -1468,20 +1468,23 @@ function renderDetailHeader(sessionId, detail, headerEl) {
     const sessionSummary = sessions.find(s => s.sessionId === sessionId);
     const projectName = projectDisplayName(detail.project);
     const sessionTitle = sessionSummary ? sessionSummary.firstDisplay : '';
-    const pathLine = createEl('span', { className: 'text-xs' });
-    pathLine.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;';
-    const projSpan = createEl('span', { className: 'font-medium', textContent: projectName });
-    projSpan.style.color = 'var(--text-secondary)';
-    pathLine.appendChild(projSpan);
-    if (sessionTitle) {
-        const sep = createEl('span', { textContent: ' — ' });
-        sep.style.color = 'var(--text-faint)';
-        pathLine.appendChild(sep);
-        const titleSpan = createEl('span', { textContent: sessionTitle });
-        titleSpan.style.color = 'var(--text-muted)';
-        pathLine.appendChild(titleSpan);
-    }
-    pathLine.title = shortPath(detail.project) + ' · ' + sessionId;
+    const projLine = createEl('span', { className: 'text-xs font-medium', textContent: projectName });
+    projLine.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--text-secondary);cursor:default;';
+    projLine.title = shortPath(detail.project);
+    projLine.addEventListener('click', () => focusProjectInSidebar(detail.project));
+    const titleLine = createEl('span', { className: 'text-xs', textContent: sessionTitle || sessionId.slice(0, 8) });
+    titleLine.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--text-muted);cursor:default;';
+    titleLine.title = sessionId;
+    titleLine.addEventListener('click', () => {
+        const item = findSessionItemById(sessionId);
+        if (item) {
+            item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            item.style.outline = '2px solid var(--accent)';
+            setTimeout(() => { item.style.outline = ''; }, 1500);
+        }
+    });
+    const headerInfo = createEl('div', {}, [projLine, titleLine]);
+    headerInfo.style.cssText = 'display:grid;gap:1px;min-width:0;';
     const chatSearchInput = createEl('input', {
         type: 'text', id: 'chatSearch',
         className: 'mac-input',
@@ -1526,11 +1529,9 @@ function renderDetailHeader(sessionId, detail, headerEl) {
         filterBtns.push(btn);
         filterBar.appendChild(btn);
     }
-    const headerRow = createEl('div', { className: 'min-w-0' }, [pathLine, filterBar, searchGroup]);
+    const headerRow = createEl('div', { className: 'min-w-0' }, [headerInfo, filterBar, searchGroup]);
     headerRow.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) auto 200px;align-items:center;gap:8px;';
-    const headerRow2 = createEl('div', {});
-    headerRow2.style.height = '22px';
-    headerEl.replaceChildren(headerRow, headerRow2);
+    headerEl.replaceChildren(headerRow);
     let chatSearchTimer;
     chatSearchInput.addEventListener('input', () => {
         chatClearBtn.style.display = chatSearchInput.value ? 'block' : 'none';
