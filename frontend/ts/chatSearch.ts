@@ -14,6 +14,7 @@ export function createChatSearchController(deps: ChatSearchDeps) {
   let chatHits: HTMLElement[] = [];
   let chatHitIndex = -1;
   let searchFilter: ChatSearchFilter = 'all';
+  let scrollAnimId: number | null = null;
 
   function reset(): void {
     chatHits = [];
@@ -21,6 +22,7 @@ export function createChatSearchController(deps: ChatSearchDeps) {
   }
 
   function smoothScrollTo(el: HTMLElement): void {
+    if (scrollAnimId !== null) cancelAnimationFrame(scrollAnimId);
     const container = byId('detailMessages') as HTMLElement;
     const target = el.offsetTop - container.offsetTop - container.clientHeight / 2 + el.clientHeight / 2;
     const start = container.scrollTop;
@@ -33,9 +35,10 @@ export function createChatSearchController(deps: ChatSearchDeps) {
       const progress = Math.min((timestamp - startTime) / duration, 1);
       const ease = 1 - Math.pow(1 - progress, 3);
       container.scrollTop = start + distance * ease;
-      if (progress < 1) requestAnimationFrame(step);
+      if (progress < 1) scrollAnimId = requestAnimationFrame(step);
+      else scrollAnimId = null;
     }
-    requestAnimationFrame(step);
+    scrollAnimId = requestAnimationFrame(step);
   }
 
   function activateChatHit(): void {
@@ -209,6 +212,10 @@ export function createChatSearchController(deps: ChatSearchDeps) {
   }
 
   function scrollToMessageIndex(messageIndex: number): void {
+    if (scrollAnimId !== null) {
+      cancelAnimationFrame(scrollAnimId);
+      scrollAnimId = null;
+    }
     const messagesEl = byId('detailMessages') as HTMLElement;
     if (!isAllMessagesRendered() && window._flushRender) window._flushRender();
     const candidates = Array.from(
@@ -220,14 +227,16 @@ export function createChatSearchController(deps: ChatSearchDeps) {
       || candidates.find((c) => c.offsetHeight > 0)
       || candidates[0];
     if (!el) return;
-    el.scrollIntoView({ block: 'center' });
-    el.style.outline = '2px solid var(--accent)';
-    el.style.outlineOffset = '2px';
-    el.style.borderRadius = '12px';
-    setTimeout(() => {
-      el.style.outline = '';
-      el.style.outlineOffset = '';
-    }, 2000);
+    requestAnimationFrame(() => {
+      el.scrollIntoView({ block: 'center' });
+      el.style.outline = '2px solid var(--accent)';
+      el.style.outlineOffset = '2px';
+      el.style.borderRadius = '12px';
+      setTimeout(() => {
+        el.style.outline = '';
+        el.style.outlineOffset = '';
+      }, 2000);
+    });
   }
 
   return {

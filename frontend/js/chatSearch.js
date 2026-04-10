@@ -4,11 +4,14 @@ export function createChatSearchController(deps) {
     let chatHits = [];
     let chatHitIndex = -1;
     let searchFilter = 'all';
+    let scrollAnimId = null;
     function reset() {
         chatHits = [];
         chatHitIndex = -1;
     }
     function smoothScrollTo(el) {
+        if (scrollAnimId !== null)
+            cancelAnimationFrame(scrollAnimId);
         const container = byId('detailMessages');
         const target = el.offsetTop - container.offsetTop - container.clientHeight / 2 + el.clientHeight / 2;
         const start = container.scrollTop;
@@ -22,9 +25,11 @@ export function createChatSearchController(deps) {
             const ease = 1 - Math.pow(1 - progress, 3);
             container.scrollTop = start + distance * ease;
             if (progress < 1)
-                requestAnimationFrame(step);
+                scrollAnimId = requestAnimationFrame(step);
+            else
+                scrollAnimId = null;
         }
-        requestAnimationFrame(step);
+        scrollAnimId = requestAnimationFrame(step);
     }
     function activateChatHit() {
         chatHits.forEach((h) => h.classList.remove('chat-hit-active'));
@@ -190,6 +195,10 @@ export function createChatSearchController(deps) {
         activateChatHit();
     }
     function scrollToMessageIndex(messageIndex) {
+        if (scrollAnimId !== null) {
+            cancelAnimationFrame(scrollAnimId);
+            scrollAnimId = null;
+        }
         const messagesEl = byId('detailMessages');
         if (!isAllMessagesRendered() && window._flushRender)
             window._flushRender();
@@ -202,14 +211,16 @@ export function createChatSearchController(deps) {
             || candidates[0];
         if (!el)
             return;
-        el.scrollIntoView({ block: 'center' });
-        el.style.outline = '2px solid var(--accent)';
-        el.style.outlineOffset = '2px';
-        el.style.borderRadius = '12px';
-        setTimeout(() => {
-            el.style.outline = '';
-            el.style.outlineOffset = '';
-        }, 2000);
+        requestAnimationFrame(() => {
+            el.scrollIntoView({ block: 'center' });
+            el.style.outline = '2px solid var(--accent)';
+            el.style.outlineOffset = '2px';
+            el.style.borderRadius = '12px';
+            setTimeout(() => {
+                el.style.outline = '';
+                el.style.outlineOffset = '';
+            }, 2000);
+        });
     }
     return {
         reset,
