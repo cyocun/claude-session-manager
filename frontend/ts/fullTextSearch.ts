@@ -166,7 +166,6 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
   return {
     getMode,
     isSearchActive,
-    setIndexReady,
     onIndexReady,
     toggleMode,
     onSearchInput,

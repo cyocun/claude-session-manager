@@ -1,5 +1,3 @@
-declare const DOMPurify: { sanitize(html: string, opts?: Record<string, unknown>): string };
-
 export function normalizeSearchQuery(query: string): string {
   return query
     .replace(/[+\-=&|><!(){}[\]^"~*?:\\/]/g, ' ')

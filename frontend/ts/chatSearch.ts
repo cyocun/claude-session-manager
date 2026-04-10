@@ -1,6 +1,5 @@
 import { getSearchTokenFallback, getSearchVariants, isVisibleTextNode, filterRootsContainingAllTokens } from './searchUtils.js';
-import { setHighlight } from './dom.js';
-import { createEl } from './dom.js';
+import { createEl, setHighlight } from './dom.js';
 
 export type ChatSearchFilter = 'all' | 'user' | 'assistant';
 
