@@ -17,7 +17,8 @@
 - [ ] プレビューポップオーバーのレンダリングもIntersectionObserverで最適化可能
 - [ ] セッション未選択→選択時のレイアウト遷移（1カラム→3カラム）のアニメーション検討
 
-### 既知の制限
+### 既知の不具合
+- [ ] 横断検索結果クリック時、セッションは正しく開くが該当メッセージへのスクロール/ハイライトが効かない（常に同じ位置になる）。以前から挙動が怪しかった
 - （修正済み）全文検索ヒット→右カラムハイライトのインデックスずれ — `msgDescs` で全メッセージの `origIdx` を保持し、描画要素がないメッセージにも `data-msg-idx` アンカーを置くことで解消
 - `clear_webview_cache()` は起動時にキャッシュを全削除する力技。Tauri v2のWebView APIでの制御が理想
 - リモート環境（Claude Code web等）では `libgtk-3-dev` / `libwebkit2gtk-4.1-dev` 等のシステム依存パッケージがインストールできず `cargo build` が通らない。Rustバックエンドのビルド確認はローカルで行うこと
@@ -41,6 +42,13 @@
 - セッション選択時: `grid-template-columns: 300px 1px 1fr`（3カラム）
 - grid子要素のスクロールには `min-height: 0` が必須（デフォルトの `min-height: auto` だとoverflowが効かない）
 - ツールブロックは `overflow: hidden` を使わない（高さが0になる問題）
+
+### 全文検索（tantivy + lindera）
+- インデックス: lindera IPAdic（形態素解析）でトークナイズ。WithFreqsAndPositionsで位置情報も保持
+- 検索クエリ: 空白分割→各チャンクをlinderaでトークナイズ→PhraseQuery（連続トークン一致）。単一トークンはPrefixQuery+FuzzyQuery
+- 「そういえば」→ lindera → ["そう","いえ","ば"] → PhraseQuery で正確にヒット
+- `search-index-ready` イベントはフロントのlistener登録前に発火しうるため、初期化時に `get_search_index_status` でポーリングも行う
+- `crates/csm-core/examples/tokenize_test.rs` でlinderaのトークナイズ結果を確認できる
 
 ### アイコン
 - Tabler Icons（https://tabler.io/icons）を使用。24x24 viewBox、stroke-width:2のストロークベース
