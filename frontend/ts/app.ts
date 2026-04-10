@@ -1764,7 +1764,7 @@ function renderMsgDesc(desc: MsgDesc, resultMap: Record<string, any>): HTMLEleme
   const els: HTMLElement[] = [];
 
   if (hasTools) {
-    const toolEls = renderToolBlocks(m.tools || [], resultMap, createEl, renderMarkdown);
+    const toolEls = renderToolBlocks(m.tools || [], resultMap, createEl);
     if (toolEls.length > 0) {
       if (hasText) {
         const bubbleInner = createEl('div', { className: 'md-content text-sm leading-relaxed break-words' });
