@@ -11,7 +11,7 @@
 - [ ] トークン消費と成果物の相関分析 — どのセッションが効率的だったかを可視化
 
 ### UI改善
-- [ ] detailHeaderの2行目（空div h=22px）を活用する — セッションメタ情報やアクションを配置する候補
+- [x] detailHeaderを2行レイアウトに整理 — Row1: プロジェクト名・セッションタイトル（titlebar内）、Row2: フィルタ＋検索（操作行）
 - [ ] ダークモードでのテーブル縞模様・ツールブロックの見え方を検証
 - [ ] セッション一覧の30秒自動更新を差分更新に最適化（現在は全DOM再構築）
 - [ ] プレビューポップオーバーのレンダリングもIntersectionObserverで最適化可能
@@ -41,3 +41,8 @@
 - セッション選択時: `grid-template-columns: 300px 1px 1fr`（3カラム）
 - grid子要素のスクロールには `min-height: 0` が必須（デフォルトの `min-height: auto` だとoverflowが効かない）
 - ツールブロックは `overflow: hidden` を使わない（高さが0になる問題）
+
+### アイコン
+- Tabler Icons（https://tabler.io/icons）を使用。24x24 viewBox、stroke-width:2のストロークベース
+- 既存アイコンは `frontend/icons/` にSVGファイルとして配置
+- 動的生成が必要な場合は `svgEl()` ヘルパーでDOM APIを使って構築（innerHTML禁止）

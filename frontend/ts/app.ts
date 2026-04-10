@@ -7,6 +7,7 @@ import {
   getPreviewDetailCached,
   hidePreview,
   initPreview,
+  invalidatePreviewCache,
   schedulePreviewHide,
   schedulePreviewShow,
   setPreviewDetailCached,
@@ -408,6 +409,7 @@ async function renderStartupCards() {
 }
 
 function showStartupView() {
+  stopDetailRefresh();
   const pane = byId('detailPane');
   const messagesEl = byId('detailMessages');
   const headerEl = byId('detailHeader');
@@ -1561,6 +1563,7 @@ function renderSessions() {
 }
 
 function prepareDetailPane(pane: HTMLElement, messagesEl: HTMLElement): void {
+  stopDetailRefresh();
   document.body.style.gridTemplateColumns = '280px 1px 1fr';
   if (isTauri) {
     tauriWindow.window.getCurrentWindow().setMinSize(new tauriWindow.window.LogicalSize(700, 500));
@@ -1593,6 +1596,9 @@ function renderDetailHeader(sessionId: string, detail: SessionDetail, headerEl: 
   projLine.title = shortPath(detail.project);
   projLine.addEventListener('click', () => focusProjectInSidebar(detail.project));
 
+  const sep = createEl('span', { className: 'text-xs', textContent: '\u00B7' });
+  sep.style.cssText = 'color:var(--text-faint);flex-shrink:0;';
+
   const titleLine = createEl('span', { className: 'text-xs', textContent: sessionTitle || sessionId.slice(0, 8) });
   titleLine.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--text-muted);cursor:default;';
   titleLine.title = sessionId;
@@ -1605,8 +1611,9 @@ function renderDetailHeader(sessionId: string, detail: SessionDetail, headerEl: 
     }
   });
 
-  const headerInfo = createEl('div', {}, [projLine, titleLine]);
-  headerInfo.style.cssText = 'display:grid;gap:1px;min-width:0;';
+  const infoRow = createEl('div', {}, [projLine, sep, titleLine]);
+  infoRow.style.cssText = 'display:flex;align-items:baseline;gap:6px;min-width:0;overflow:hidden;';
+  infoRow.setAttribute('data-tauri-drag-region', '');
 
   const chatSearchInput = createEl('input', {
     type: 'text', id: 'chatSearch',
@@ -1630,9 +1637,31 @@ function renderDetailHeader(sessionId: string, detail: SessionDetail, headerEl: 
   const searchOverlay = createEl('div', {}, [chatCount, prevBtn, nextBtn, chatClearBtn]);
   searchOverlay.style.cssText = 'display:grid;grid-auto-flow:column;grid-auto-columns:max-content;align-items:center;gap:2px;position:absolute;right:6px;top:50%;transform:translateY(-50%);pointer-events:auto;';
   const searchGroup = createEl('div', {}, [chatSearchInput, searchOverlay]);
-  searchGroup.style.cssText = 'display:grid;position:relative;width:200px;justify-self:end;';
+  searchGroup.style.cssText = 'display:grid;position:relative;min-width:0;';
 
-  // Filter segmented control: All / User / AI
+  // Filter segmented control: All / AI / User (speech bubble icons)
+  function svgEl(tag: string, attrs: Record<string, string>, children?: SVGElement[]): SVGElement {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    if (children) children.forEach(c => el.appendChild(c));
+    return el;
+  }
+  const bubbleSvgAttrs = { width: '14', height: '14', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' };
+  function bubbleIcon(key: string): SVGElement {
+    if (key === 'all') {
+      // Tabler "messages": two overlapping bubbles
+      return svgEl('svg', bubbleSvgAttrs, [
+        svgEl('path', { d: 'M21 14l-3 -3h-7a1 1 0 0 1 -1 -1v-6a1 1 0 0 1 1 -1h9a1 1 0 0 1 1 1v10' }),
+        svgEl('path', { d: 'M14 15v2a1 1 0 0 1 -1 1h-7l-3 3v-10a1 1 0 0 1 1 -1h2' }),
+      ]);
+    }
+    // Tabler "message": single bubble, tail bottom-left
+    const svg = svgEl('svg', bubbleSvgAttrs, [
+      svgEl('path', { d: 'M18 4a3 3 0 0 1 3 3v8a3 3 0 0 1 -3 3h-5l-5 3v-3h-2a3 3 0 0 1 -3 -3v-8a3 3 0 0 1 3 -3h12' }),
+    ]);
+    if (key === 'user') (svg as unknown as HTMLElement).style.transform = 'scaleX(-1)';
+    return svg;
+  }
   type FilterDef = { key: ChatSearchFilter; label: string };
   const filters: FilterDef[] = [
     { key: 'all', label: t('chatFilterAll') },
@@ -1644,8 +1673,10 @@ function renderDetailHeader(sessionId: string, detail: SessionDetail, headerEl: 
   for (const f of filters) {
     const btn = createEl('button', {
       className: 'mac-segmented-btn' + (f.key === chatSearch.getFilter() ? ' active' : ''),
-      textContent: f.label,
     });
+    btn.appendChild(bubbleIcon(f.key));
+    btn.title = f.label;
+    btn.style.cssText += 'display:inline-flex;align-items:center;justify-content:center;padding:3px 7px;';
     btn.addEventListener('click', () => {
       chatSearch.setFilter(f.key);
       filterBtns.forEach((b, i) => {
@@ -1657,9 +1688,17 @@ function renderDetailHeader(sessionId: string, detail: SessionDetail, headerEl: 
     filterBar.appendChild(btn);
   }
 
-  const headerRow = createEl('div', { className: 'min-w-0' }, [headerInfo, filterBar, searchGroup]);
-  headerRow.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) auto 200px;align-items:center;gap:8px;';
-  headerEl.replaceChildren(headerRow);
+  const controlsRow = createEl('div', { className: 'min-w-0' }, [filterBar, searchGroup]);
+  controlsRow.style.cssText = 'display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;';
+
+  // Place infoRow inside the titlebar drag area (bottom-aligned) so that
+  // controlsRow aligns vertically with the left pane's search row.
+  const titlebarDrag = headerEl.previousElementSibling as HTMLElement;
+  if (titlebarDrag?.classList.contains('titlebar-drag')) {
+    titlebarDrag.style.cssText = 'display:flex;align-items:flex-end;padding:0 16px 10px;min-width:0;background:var(--bg-surface);';
+    titlebarDrag.replaceChildren(infoRow);
+  }
+  headerEl.replaceChildren(controlsRow);
 
   let chatSearchTimer: ReturnType<typeof setTimeout> | undefined;
   chatSearchInput.addEventListener('input', () => {
@@ -1719,7 +1758,135 @@ function renderDetailFooter(sessionId: string): void {
   footerEl.replaceChildren(resumeOpenBtn, resumeCopyBtn, summarizeBtn, archiveBtn);
 }
 
+function renderMsgDesc(desc: MsgDesc, resultMap: Record<string, any>): HTMLElement[] {
+  const { msg: m, hasText, hasTools } = desc;
+  const isUser = m.type === 'user';
+  const els: HTMLElement[] = [];
+
+  if (hasTools) {
+    const toolEls = renderToolBlocks(m.tools || [], resultMap, createEl, renderMarkdown);
+    if (toolEls.length > 0) {
+      if (hasText) {
+        const bubbleInner = createEl('div', { className: 'md-content text-sm leading-relaxed break-words' });
+        bubbleInner.innerHTML = renderMarkdown(m.content || '');
+        const bubble = createEl('div', { className: (isUser ? 'bubble-user' : 'bubble-assistant') + ' px-4 py-2.5' }, [bubbleInner]);
+        bubble.style.justifySelf = isUser ? 'end' : 'start';
+        els.push(bubble);
+      }
+      toolEls.forEach(te => els.push(te));
+      return els;
+    }
+  }
+
+  const hasImages = Boolean(m.images && m.images.length > 0);
+  if (!hasText && !hasImages) return els;
+
+  const bubbleInner = createEl('div', { className: 'md-content text-sm leading-relaxed break-words' });
+  if (hasText) bubbleInner.innerHTML = renderMarkdown(m.content || '');
+  if (hasImages) {
+    for (const img of m.images || []) {
+      const imgEl = document.createElement('img');
+      imgEl.className = 'chat-inline-img';
+      if (img.sourceType === 'base64') imgEl.src = `data:${img.mediaType};base64,${img.data}`;
+      else imgEl.src = `asset://localhost/${encodeURIComponent(img.data)}`;
+      imgEl.alt = 'image';
+      bubbleInner.appendChild(imgEl);
+    }
+  }
+
+  const bubble = createEl('div', { className: (isUser ? 'bubble-user' : 'bubble-assistant') + ' px-4 py-2.5' }, [bubbleInner]);
+  bubble.style.justifySelf = isUser ? 'end' : 'start';
+  els.push(bubble);
+  return els;
+}
+
+function appendRenderedMsgDesc(desc: MsgDesc, parentEl: ParentNode, resultMap: Record<string, any>) {
+  const els = renderMsgDesc(desc, resultMap);
+  if (els.length === 0) {
+    const anchor = createEl('div', {});
+    anchor.style.cssText = 'height:0;overflow:hidden;';
+    anchor.setAttribute('data-msg-idx', String(desc.origIdx));
+    parentEl.appendChild(anchor);
+    return;
+  }
+  els.forEach(el => {
+    el.setAttribute('data-msg-idx', String(desc.origIdx));
+    parentEl.appendChild(el);
+  });
+}
+
+// State for active detail auto-refresh
+let activeDetailState: {
+  sessionId: string;
+  messageCount: number;
+  globalResultMap: Record<string, any>;
+  chatContainer: HTMLElement;
+  messagesEl: HTMLElement;
+} | null = null;
+let detailRefreshTimer: ReturnType<typeof setInterval> | null = null;
+
+function stopDetailRefresh(): void {
+  if (detailRefreshTimer !== null) {
+    clearInterval(detailRefreshTimer);
+    detailRefreshTimer = null;
+  }
+  activeDetailState = null;
+}
+
+function startDetailRefresh(sessionId: string, messageCount: number, globalResultMap: Record<string, any>, chatContainer: HTMLElement, messagesEl: HTMLElement): void {
+  stopDetailRefresh();
+  activeDetailState = { sessionId, messageCount, globalResultMap, chatContainer, messagesEl };
+
+  detailRefreshTimer = setInterval(async () => {
+    const state = activeDetailState;
+    if (!state || state.sessionId !== selectedSession) {
+      stopDetailRefresh();
+      return;
+    }
+
+    let detail: SessionDetail | null;
+    try {
+      detail = await fetchDetail(state.sessionId);
+    } catch {
+      return;
+    }
+    if (!detail || detail.messages.length <= state.messageCount) return;
+
+    // Update cache
+    setPreviewDetailCached(state.sessionId, detail);
+
+    // Collect new tool results
+    const newMessages = detail.messages.slice(state.messageCount);
+    for (const m of newMessages) {
+      if (m.tools) {
+        for (const tool of m.tools) {
+          if (tool.name === '_result') state.globalResultMap[tool.id] = tool;
+        }
+      }
+    }
+
+    // Check if user is scrolled to bottom (within 50px tolerance)
+    const wasAtBottom = state.messagesEl.scrollHeight - state.messagesEl.scrollTop - state.messagesEl.clientHeight < 50;
+
+    // Append new messages
+    for (let i = 0; i < newMessages.length; i++) {
+      const origIdx = state.messageCount + i;
+      const m = newMessages[i];
+      const hasText = Boolean(m.content && m.content !== '[Tool Result]' && !m.content.startsWith('[Tool:'));
+      const hasTools = Boolean(m.tools && m.tools.length > 0);
+      appendRenderedMsgDesc({ msg: m, hasText, hasTools, origIdx }, state.chatContainer, state.globalResultMap);
+    }
+
+    state.messageCount = detail.messages.length;
+
+    if (wasAtBottom) {
+      requestAnimationFrame(() => { state.messagesEl.scrollTop = state.messagesEl.scrollHeight; });
+    }
+  }, 5000);
+}
+
 function renderDetailMessages(detail: SessionDetail, messagesEl: HTMLElement): void {
+  stopDetailRefresh();
   messagesEl.replaceChildren();
   const chatContainer = createEl('div', {});
   chatContainer.style.cssText = 'display:grid;gap:12px;';
@@ -1742,70 +1909,13 @@ function renderDetailMessages(detail: SessionDetail, messagesEl: HTMLElement): v
     msgDescs.push({ msg: m, hasText, hasTools, origIdx });
   });
 
-  function renderMsgDesc(desc: MsgDesc): HTMLElement[] {
-    const { msg: m, hasText, hasTools } = desc;
-    const isUser = m.type === 'user';
-    const els: HTMLElement[] = [];
-
-    if (hasTools) {
-      const toolEls = renderToolBlocks(m.tools || [], globalResultMap, createEl);
-      if (toolEls.length > 0) {
-        if (hasText) {
-          const bubbleInner = createEl('div', { className: 'md-content text-sm leading-relaxed break-words' });
-          bubbleInner.innerHTML = renderMarkdown(m.content || '');
-          const bubble = createEl('div', { className: (isUser ? 'bubble-user' : 'bubble-assistant') + ' px-4 py-2.5' }, [bubbleInner]);
-          bubble.style.justifySelf = isUser ? 'end' : 'start';
-          els.push(bubble);
-        }
-        toolEls.forEach(te => els.push(te));
-        return els;
-      }
-    }
-
-    const hasImages = Boolean(m.images && m.images.length > 0);
-    if (!hasText && !hasImages) return els;
-
-    const bubbleInner = createEl('div', { className: 'md-content text-sm leading-relaxed break-words' });
-    if (hasText) bubbleInner.innerHTML = renderMarkdown(m.content || '');
-    if (hasImages) {
-      for (const img of m.images || []) {
-        const imgEl = document.createElement('img');
-        imgEl.className = 'chat-inline-img';
-        if (img.sourceType === 'base64') imgEl.src = `data:${img.mediaType};base64,${img.data}`;
-        else imgEl.src = `asset://localhost/${encodeURIComponent(img.data)}`;
-        imgEl.alt = 'image';
-        bubbleInner.appendChild(imgEl);
-      }
-    }
-
-    const bubble = createEl('div', { className: (isUser ? 'bubble-user' : 'bubble-assistant') + ' px-4 py-2.5' }, [bubbleInner]);
-    bubble.style.justifySelf = isUser ? 'end' : 'start';
-    els.push(bubble);
-    return els;
-  }
-
-  function appendRenderedMsgDesc(desc: MsgDesc, parentEl: ParentNode) {
-    const els = renderMsgDesc(desc);
-    if (els.length === 0) {
-      const anchor = createEl('div', {});
-      anchor.style.cssText = 'height:0;overflow:hidden;';
-      anchor.setAttribute('data-msg-idx', String(desc.origIdx));
-      parentEl.appendChild(anchor);
-      return;
-    }
-    els.forEach(el => {
-      el.setAttribute('data-msg-idx', String(desc.origIdx));
-      parentEl.appendChild(el);
-    });
-  }
-
   const immediateCount = Math.min(100, msgDescs.length);
   const deferredCount = msgDescs.length - immediateCount;
   const deferredPlaceholder: HTMLElement | null = deferredCount > 0 ? createEl('div') : null;
   if (deferredPlaceholder) chatContainer.appendChild(deferredPlaceholder);
 
   for (let i = deferredCount; i < msgDescs.length; i++) {
-    appendRenderedMsgDesc(msgDescs[i], chatContainer);
+    appendRenderedMsgDesc(msgDescs[i], chatContainer, globalResultMap);
   }
 
   messagesEl.appendChild(chatContainer);
@@ -1823,7 +1933,7 @@ function renderDetailMessages(detail: SessionDetail, messagesEl: HTMLElement): v
     if (!deferredPlaceholder) return;
     const frag = document.createDocumentFragment();
     for (let i = 0; i < deferredCount; i++) {
-      appendRenderedMsgDesc(msgDescs[i], frag);
+      appendRenderedMsgDesc(msgDescs[i], frag, globalResultMap);
     }
     const prevScrollTop = messagesEl.scrollTop;
     const prevScrollHeight = messagesEl.scrollHeight;
@@ -1841,7 +1951,7 @@ function renderDetailMessages(detail: SessionDetail, messagesEl: HTMLElement): v
       if (ctrl.aborted) return;
       const end = Math.min(chunkIdx + 10, deferredCount);
       while (chunkIdx < end) {
-        appendRenderedMsgDesc(msgDescs[chunkIdx], deferredFrag);
+        appendRenderedMsgDesc(msgDescs[chunkIdx], deferredFrag, globalResultMap);
         chunkIdx++;
         if (deadline && deadline.timeRemaining && deadline.timeRemaining() < 2) break;
       }
@@ -1858,6 +1968,11 @@ function renderDetailMessages(detail: SessionDetail, messagesEl: HTMLElement): v
     }
     if (typeof requestIdleCallback === 'function') requestIdleCallback(buildChunk, { timeout: 100 });
     else setTimeout(() => buildChunk(null), 16);
+  }
+
+  // Start auto-refresh for this session
+  if (selectedSession) {
+    startDetailRefresh(selectedSession, detail.messages.length, globalResultMap, chatContainer, messagesEl);
   }
 }
 
@@ -1922,6 +2037,14 @@ if (isTauri && tauriWindow.event) {
     const indicator = byIdOptional('searchIndexIndicator');
     if (indicator) indicator.remove();
   });
+  // Check if index was already built before listener was registered
+  invoke('get_search_index_status').then((status: any) => {
+    if (status && !status.is_indexing) {
+      fullTextSearch.setIndexReady(true);
+      const indicator = byIdOptional('searchIndexIndicator');
+      if (indicator) indicator.remove();
+    }
+  }).catch(() => {});
   listen('menu-show-archived', (e: any) => {
     byId<HTMLInputElement>('showArchived').checked = e.payload;
     fetchSessions(e.payload);
@@ -2113,9 +2236,12 @@ setInterval(async () => {
     }
   }
 
-  // Incremental search index update for changed sessions
+  // Invalidate preview cache for changed/added sessions
   const updatedIds = changed.map(s => s.sessionId).concat(added.map(s => s.sessionId));
   if (updatedIds.length > 0) {
+    invalidatePreviewCache(updatedIds);
+
+    // Incremental search index update
     invoke('update_search_index', { sessionIds: updatedIds }).catch((error) => {
       console.warn('[poll] incremental index update failed', error);
     });

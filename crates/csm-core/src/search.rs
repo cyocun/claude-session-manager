@@ -6,7 +6,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::{atomic::{AtomicBool, Ordering}, Mutex, RwLock};
 use tantivy::collector::TopDocs;
-use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, QueryParser, TermQuery};
+use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, PhraseQuery, PhrasePrefixQuery, QueryParser, TermQuery};
 use tantivy::schema::*;
 use tantivy::snippet::SnippetGenerator;
 use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument};
@@ -23,6 +23,7 @@ pub struct SearchIndex {
     index: Index,
     reader: IndexReader,
     writer: Mutex<IndexWriter>,
+    segmenter: lindera::segmenter::Segmenter,
     f_session_id: Field,
     f_project: Field,
     f_content: Field,
@@ -85,17 +86,26 @@ impl SearchIndex {
         )?;
 
         // Register lindera Japanese tokenizer (IPAdic / MeCab-compatible)
-        let lindera_tokenizer = {
-            let dictionary = lindera::dictionary::load_dictionary("embedded://ipadic")
-                .map_err(|e| format!("Failed to load IPAdic dictionary: {}", e))?;
-            let segmenter = lindera::segmenter::Segmenter::new(
-                lindera::mode::Mode::Normal,
-                dictionary,
-                None,
-            );
-            lindera_tantivy::tokenizer::LinderaTokenizer::from_segmenter(segmenter)
-        };
-        index.tokenizers().register(TOKENIZER_NAME, lindera_tokenizer);
+        let dictionary = lindera::dictionary::load_dictionary("embedded://ipadic")
+            .map_err(|e| format!("Failed to load IPAdic dictionary: {}", e))?;
+        let segmenter_for_index = lindera::segmenter::Segmenter::new(
+            lindera::mode::Mode::Normal,
+            dictionary,
+            None,
+        );
+        index.tokenizers().register(
+            TOKENIZER_NAME,
+            lindera_tantivy::tokenizer::LinderaTokenizer::from_segmenter(segmenter_for_index),
+        );
+
+        // Separate segmenter instance for tokenizing search queries
+        let query_dictionary = lindera::dictionary::load_dictionary("embedded://ipadic")
+            .map_err(|e| format!("Failed to load IPAdic dictionary for query: {}", e))?;
+        let segmenter = lindera::segmenter::Segmenter::new(
+            lindera::mode::Mode::Normal,
+            query_dictionary,
+            None,
+        );
 
         let reader = index
             .reader_builder()
@@ -110,6 +120,7 @@ impl SearchIndex {
             index,
             reader,
             writer: Mutex::new(writer),
+            segmenter,
             f_session_id,
             f_project,
             f_content,
@@ -296,42 +307,52 @@ impl SearchIndex {
         let limit = limit.min(500);
         let searcher = self.reader.searcher();
         let query_parser = QueryParser::for_index(&self.index, vec![self.f_content]);
-        let escaped_query = query_str
-            .split_whitespace()
-            .map(|term| escape_query_term(&term.to_lowercase()))
-            .collect::<Vec<String>>()
-            .join(" ");
 
-        // Build per-term query: prefix OR fuzzy, all terms must match
-        let terms: Vec<String> = query_str
-            .split_whitespace()
-            .map(|term| escape_query_term(&term.to_lowercase()))
-            .filter(|term| !term.is_empty())
-            .collect();
+        // Tokenize each whitespace-delimited chunk with lindera, then build
+        // a PhraseQuery per chunk (consecutive token match). Multiple chunks
+        // are combined with AND.
+        let chunks: Vec<&str> = query_str.split_whitespace().collect();
         let mut must_clauses: Vec<(Occur, Box<dyn tantivy::query::Query>)> = Vec::new();
 
-        for escaped_term in &terms {
-            let mut should_clauses: Vec<(Occur, Box<dyn tantivy::query::Query>)> = Vec::new();
+        for chunk in &chunks {
+            let lowered = chunk.to_lowercase();
+            let mut tokens = self.segmenter.segment(lowered.clone().into())
+                .unwrap_or_default();
+            let token_strings: Vec<String> = tokens
+                .iter_mut()
+                .map(|t| t.surface.to_string())
+                .filter(|s| !s.trim().is_empty())
+                .collect();
 
-            // Prefix query (e.g. "robot-ar" matches "robot-arm")
-            if let Ok(prefix_q) = query_parser.parse_query(&format!("{}*", escaped_term)) {
-                should_clauses.push((Occur::Should, prefix_q));
+            if token_strings.is_empty() {
+                continue;
             }
 
-            // Fuzzy query (Levenshtein distance 1) — only for longer terms to avoid noise
-            if escaped_term.chars().count() >= 7 {
-                let tantivy_term = tantivy::Term::from_field_text(self.f_content, escaped_term);
-                let fuzzy_q = FuzzyTermQuery::new(tantivy_term, 1, true);
-                should_clauses.push((Occur::Should, Box::new(fuzzy_q)));
-            }
-
-            if !should_clauses.is_empty() {
-                must_clauses.push((Occur::Must, Box::new(BooleanQuery::new(should_clauses))));
+            if token_strings.len() == 1 {
+                // Single token: use prefix query for partial matching
+                let term = tantivy::Term::from_field_text(self.f_content, &token_strings[0]);
+                let prefix_q = PhrasePrefixQuery::new(vec![term.clone()]);
+                let mut should: Vec<(Occur, Box<dyn tantivy::query::Query>)> = vec![
+                    (Occur::Should, Box::new(prefix_q)),
+                ];
+                // Fuzzy for longer tokens
+                if token_strings[0].chars().count() >= 4 {
+                    should.push((Occur::Should, Box::new(FuzzyTermQuery::new(term, 1, true))));
+                }
+                must_clauses.push((Occur::Must, Box::new(BooleanQuery::new(should))));
+            } else {
+                // Multiple tokens: PhraseQuery (consecutive match)
+                let phrase_terms: Vec<tantivy::Term> = token_strings
+                    .iter()
+                    .map(|s| tantivy::Term::from_field_text(self.f_content, s))
+                    .collect();
+                let phrase_q = PhraseQuery::new(phrase_terms);
+                must_clauses.push((Occur::Must, Box::new(phrase_q)));
             }
         }
 
         let text_query: Box<dyn tantivy::query::Query> = if must_clauses.is_empty() {
-            let (query, _errors) = query_parser.parse_query_lenient(&escaped_query);
+            let (query, _errors) = query_parser.parse_query_lenient(&query_str.to_lowercase());
             query
         } else {
             Box::new(BooleanQuery::new(must_clauses))
@@ -505,6 +526,11 @@ impl SearchIndex {
     }
 
     pub fn update_sessions(&self, session_ids: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+        // Skip if full index build is in progress to avoid writer contention
+        if self.is_indexing.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+
         let history_path = history_file();
         if !history_path.exists() {
             return Ok(());
@@ -574,17 +600,3 @@ struct SearchableMessage {
     message_index: u32,
 }
 
-fn escape_query_term(term: &str) -> String {
-    let mut escaped = String::with_capacity(term.len());
-    for ch in term.chars() {
-        match ch {
-            '+' | '-' | '=' | '&' | '|' | '>' | '<' | '!' | '(' | ')' | '{' | '}' | '['
-            | ']' | '^' | '"' | '~' | '*' | '?' | ':' | '\\' | '/' => {
-                escaped.push('\\');
-                escaped.push(ch);
-            }
-            _ => escaped.push(ch),
-        }
-    }
-    escaped
-}

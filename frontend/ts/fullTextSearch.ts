@@ -156,7 +156,7 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     const msg = document.createElement('div');
     msg.className = 'text-xs text-center py-8';
     msg.style.color = 'var(--text-faint)';
-    msg.textContent = t('searchIndexing');
+    msg.textContent = searchIndexReady ? t('searchSearching') : t('searchIndexing');
     el.appendChild(msg);
   }
 
