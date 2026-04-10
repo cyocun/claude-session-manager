@@ -110,6 +110,11 @@ export function setPreviewDetailCached(sessionId, detail) {
     previewCache[sessionId] = detail;
     trimPreviewCache();
 }
+export function invalidatePreviewCache(sessionIds) {
+    for (const id of sessionIds) {
+        delete previewCache[id];
+    }
+}
 export function schedulePreviewShow(sessionId, anchorRect) {
     clearTimer();
     clearDeactivateTimer();

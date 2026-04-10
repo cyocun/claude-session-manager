@@ -1,3 +1,5 @@
+import { setHighlight } from './dom.js';
+
 export function initResizeHandle(byId: (id: string) => any): void {
   const handle = byId('resizeHandle') as HTMLElement;
   let dragging = false;
@@ -39,7 +41,7 @@ export function initKeyboardNavigation(deps: KeyboardNavDeps): void {
     const prev = document.querySelector('.bubble-focused');
     if (prev) {
       prev.classList.remove('bubble-focused');
-      (prev as HTMLElement).style.outline = '';
+      setHighlight(prev as HTMLElement, false);
     }
     focusedBubbleIdx = -1;
   }
@@ -55,9 +57,7 @@ export function initKeyboardNavigation(deps: KeyboardNavDeps): void {
     focusedBubbleIdx = Math.max(0, Math.min(idx, bubbles.length - 1));
     const bubble = bubbles[focusedBubbleIdx];
     bubble.classList.add('bubble-focused');
-    bubble.style.outline = '2px solid var(--accent)';
-    bubble.style.outlineOffset = '2px';
-    bubble.style.borderRadius && (bubble.style.outlineOffset = '2px');
+    setHighlight(bubble, true);
     bubble.scrollIntoView({ block: 'nearest' });
   }
 

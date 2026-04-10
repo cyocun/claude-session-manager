@@ -1,5 +1,5 @@
 import { detectLang, translate } from './i18n.js';
-import { createEl, getById } from './dom.js';
+import { createEl, getById, setHighlight } from './dom.js';
 import { getThemePref, applyTheme, watchSystemTheme } from './theme.js';
 import { invoke, invokeStrict, isTauri } from './tauri.js';
 import { isRemoteHost, shortPath, timeAgo } from './utils.js';
@@ -1483,8 +1483,7 @@ function renderDetailHeader(sessionId, detail, headerEl) {
         const item = findSessionItemById(sessionId);
         if (item) {
             item.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            item.style.outline = '2px solid var(--accent)';
-            setTimeout(() => { item.style.outline = ''; }, 1500);
+            setHighlight(item, true);
         }
     });
     const infoRow = createEl('div', {}, [projLine, sep, titleLine]);
@@ -1633,7 +1632,7 @@ function renderMsgDesc(desc, resultMap) {
     const isUser = m.type === 'user';
     const els = [];
     if (hasTools) {
-        const toolEls = renderToolBlocks(m.tools || [], resultMap, createEl, renderMarkdown);
+        const toolEls = renderToolBlocks(m.tools || [], resultMap, createEl);
         if (toolEls.length > 0) {
             if (hasText) {
                 const bubbleInner = createEl('div', { className: 'md-content text-sm leading-relaxed break-words' });

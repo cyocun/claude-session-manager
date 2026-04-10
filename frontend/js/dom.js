@@ -25,3 +25,7 @@ export function getById(id) {
     }
     return el;
 }
+const HIGHLIGHT_CLASS = 'accent-highlight';
+export function setHighlight(el, on) {
+    el.classList.toggle(HIGHLIGHT_CLASS, on);
+}
