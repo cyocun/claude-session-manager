@@ -5,13 +5,19 @@ export function createChatSearchController(deps) {
     let chatHitIndex = -1;
     let searchFilter = 'all';
     let scrollAnimId = null;
+    function cancelScroll() {
+        if (scrollAnimId !== null) {
+            cancelAnimationFrame(scrollAnimId);
+            scrollAnimId = null;
+        }
+    }
     function reset() {
         chatHits = [];
         chatHitIndex = -1;
+        cancelScroll();
     }
     function smoothScrollTo(el) {
-        if (scrollAnimId !== null)
-            cancelAnimationFrame(scrollAnimId);
+        cancelScroll();
         const container = byId('detailMessages');
         const target = el.offsetTop - container.offsetTop - container.clientHeight / 2 + el.clientHeight / 2;
         const start = container.scrollTop;
@@ -195,10 +201,7 @@ export function createChatSearchController(deps) {
         activateChatHit();
     }
     function scrollToMessageIndex(messageIndex) {
-        if (scrollAnimId !== null) {
-            cancelAnimationFrame(scrollAnimId);
-            scrollAnimId = null;
-        }
+        cancelScroll();
         const messagesEl = byId('detailMessages');
         if (!isAllMessagesRendered() && window._flushRender)
             window._flushRender();
@@ -219,6 +222,7 @@ export function createChatSearchController(deps) {
             setTimeout(() => {
                 el.style.outline = '';
                 el.style.outlineOffset = '';
+                el.style.borderRadius = '';
             }, 2000);
         });
     }
