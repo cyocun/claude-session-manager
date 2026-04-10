@@ -1,5 +1,5 @@
 import { detectLang, translate } from './i18n.js';
-import { createEl, getById } from './dom.js';
+import { createEl, getById, flashHighlight } from './dom.js';
 import { getThemePref, applyTheme, watchSystemTheme } from './theme.js';
 import { invoke, invokeStrict, isTauri } from './tauri.js';
 import { isRemoteHost, shortPath, shortPathElements, timeAgo } from './utils.js';
@@ -1606,8 +1606,7 @@ function renderDetailHeader(sessionId: string, detail: SessionDetail, headerEl: 
     const item = findSessionItemById(sessionId);
     if (item) {
       item.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      item.style.outline = '2px solid var(--accent)';
-      setTimeout(() => { item.style.outline = ''; }, 1500);
+      flashHighlight(item);
     }
   });
 

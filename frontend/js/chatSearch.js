@@ -1,4 +1,5 @@
 import { getSearchTokenFallback, getSearchVariants } from './searchUtils.js';
+import { flashHighlight } from './dom.js';
 export function createChatSearchController(deps) {
     const { byId, t, isAllMessagesRendered } = deps;
     let chatHits = [];
@@ -216,14 +217,7 @@ export function createChatSearchController(deps) {
             return;
         requestAnimationFrame(() => {
             el.scrollIntoView({ block: 'center' });
-            el.style.outline = '2px solid var(--accent)';
-            el.style.outlineOffset = '2px';
-            el.style.borderRadius = '12px';
-            setTimeout(() => {
-                el.style.outline = '';
-                el.style.outlineOffset = '';
-                el.style.borderRadius = '';
-            }, 2000);
+            flashHighlight(el);
         });
     }
     return {

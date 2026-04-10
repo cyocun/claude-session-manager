@@ -24,3 +24,16 @@ export function getById<T extends HTMLElement = HTMLElement>(id: string): T {
   }
   return el as T;
 }
+
+const HIGHLIGHT_CLASS = 'accent-highlight';
+
+/** Add accent outline that auto-removes after 2 s. */
+export function flashHighlight(el: HTMLElement): void {
+  el.classList.add(HIGHLIGHT_CLASS);
+  setTimeout(() => el.classList.remove(HIGHLIGHT_CLASS), 2000);
+}
+
+/** Add/remove persistent accent outline (for selection state). */
+export function setHighlight(el: HTMLElement, on: boolean): void {
+  el.classList.toggle(HIGHLIGHT_CLASS, on);
+}

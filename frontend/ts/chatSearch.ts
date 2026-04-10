@@ -1,4 +1,5 @@
 import { getSearchTokenFallback, getSearchVariants } from './searchUtils.js';
+import { flashHighlight } from './dom.js';
 
 export type ChatSearchFilter = 'all' | 'user' | 'assistant';
 
@@ -234,14 +235,7 @@ export function createChatSearchController(deps: ChatSearchDeps) {
     if (!el) return;
     requestAnimationFrame(() => {
       el.scrollIntoView({ block: 'center' });
-      el.style.outline = '2px solid var(--accent)';
-      el.style.outlineOffset = '2px';
-      el.style.borderRadius = '12px';
-      setTimeout(() => {
-        el.style.outline = '';
-        el.style.outlineOffset = '';
-        el.style.borderRadius = '';
-      }, 2000);
+      flashHighlight(el);
     });
   }
 
