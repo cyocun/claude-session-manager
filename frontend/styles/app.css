@@ -578,3 +578,31 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
       outline-offset: 2px;
       border-radius: 12px;
     }
+
+    /* Embedded terminal */
+    #terminalContainer {
+      background: #1e1e2e;
+      padding: 4px;
+    }
+    :root:not(.dark) #terminalContainer {
+      background: #ffffff;
+    }
+    #terminalContainer .xterm {
+      height: 100%;
+    }
+    #terminalContainer .xterm-viewport {
+      overflow-y: auto;
+    }
+
+    /* Terminal vertical resize handle */
+    .terminal-resize-handle {
+      height: 4px;
+      cursor: row-resize;
+      background: var(--border);
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+    .terminal-resize-handle:hover,
+    .terminal-resize-handle.active {
+      background: var(--accent);
+    }

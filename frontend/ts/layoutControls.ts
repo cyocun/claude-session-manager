@@ -27,6 +27,45 @@ export function initResizeHandle(byId: (id: string) => any): void {
   });
 }
 
+export function initTerminalResizeHandle(
+  byId: (id: string) => any,
+  onHeightChange: (h: number) => void,
+): void {
+  const handle = byId('terminalResizeHandle') as HTMLElement;
+  const container = byId('terminalContainer') as HTMLElement;
+  let dragging = false;
+  let startY = 0;
+  let startH = 0;
+
+  handle.addEventListener('mousedown', (e: MouseEvent) => {
+    e.preventDefault();
+    dragging = true;
+    startY = e.clientY;
+    startH = container.offsetHeight;
+    handle.classList.add('active');
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', (e: MouseEvent) => {
+    if (!dragging) return;
+    // Drag up → increase terminal height, drag down → decrease
+    const delta = startY - e.clientY;
+    const maxH = window.innerHeight * 0.7;
+    const newH = Math.max(150, Math.min(maxH, startH + delta));
+    container.style.height = newH + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    onHeightChange(container.offsetHeight);
+  });
+}
+
 export type KeyboardNavDeps = {
   byId: (id: string) => any;
   getSelectedSession: () => string | null;

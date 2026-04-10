@@ -8,9 +8,10 @@ import { createChatSearchController } from './chatSearch.js';
 import { createFullTextSearchController } from './fullTextSearch.js';
 import { renderToolBlocks } from './toolRenderer.js';
 import { createSessionActions } from './sessionActions.js';
-import { initKeyboardNavigation, initResizeHandle } from './layoutControls.js';
+import { initKeyboardNavigation, initResizeHandle, initTerminalResizeHandle } from './layoutControls.js';
 import { hasSessionIdentityOrderChanged, patchSessionListItems } from './sessionListView.js';
 import { ICONS } from './icons.js';
+import { openTerminal, closeTerminal, isTerminalOpen, updateTerminalTheme, getStoredHeight, setStoredHeight, } from './terminal.js';
 const tauriWindow = window.__TAURI__;
 const byId = (id) => getById(id);
 const byIdOptional = (id) => document.getElementById(id);
@@ -38,8 +39,10 @@ function applyI18n() {
 // --- Theme ---
 let themePref = getThemePref();
 watchSystemTheme(() => {
-    if (themePref === 'system')
+    if (themePref === 'system') {
         applyTheme(themePref);
+        updateTerminalTheme();
+    }
 });
 // --- Markdown ---
 const md = window.markdownit({
@@ -1442,8 +1445,32 @@ function renderSessions() {
         el.appendChild(renderProjectGroup(g, groups));
     });
 }
+function showTerminalPane() {
+    const container = byId('terminalContainer');
+    const handle = byId('terminalResizeHandle');
+    const pane = byId('detailPane');
+    const h = getStoredHeight();
+    container.style.display = 'block';
+    container.style.height = h + 'px';
+    handle.style.display = 'block';
+    // Update grid to include terminal rows: titlebar, header, messages, resize-handle, terminal, footer
+    pane.style.gridTemplateRows = '38px auto 1fr auto auto auto';
+}
+function hideTerminalPane() {
+    const container = byId('terminalContainer');
+    const handle = byId('terminalResizeHandle');
+    const pane = byId('detailPane');
+    container.style.display = 'none';
+    handle.style.display = 'none';
+    pane.style.gridTemplateRows = '38px auto 1fr auto';
+}
 function prepareDetailPane(pane, messagesEl) {
     stopDetailRefresh();
+    // Close any open terminal when switching sessions
+    if (isTerminalOpen()) {
+        closeTerminal();
+        hideTerminalPane();
+    }
     document.body.style.gridTemplateColumns = '280px 1px 1fr';
     if (isTauri) {
         tauriWindow.window.getCurrentWindow().setMinSize(new tauriWindow.window.LogicalSize(700, 500));
@@ -1625,7 +1652,23 @@ function renderDetailFooter(sessionId) {
         else
             actions.showToast(t('toastError') + (res?.error || ''));
     });
-    footerEl.replaceChildren(resumeOpenBtn, resumeCopyBtn, summarizeBtn, archiveBtn);
+    const termBtn = mkBtn(isTerminalOpen() ? t('closeTerminal') : t('openTerminal'), false, async () => {
+        if (isTerminalOpen()) {
+            hideTerminalPane();
+            await closeTerminal();
+            // Re-render footer to update button text
+            renderDetailFooter(sessionId);
+        }
+        else {
+            showTerminalPane();
+            const container = byId('terminalContainer');
+            await openTerminal(sessionId, container);
+            renderDetailFooter(sessionId);
+        }
+    });
+    // Add terminal icon to button
+    termBtn.innerHTML = ICONS.terminal + ' ' + termBtn.textContent;
+    footerEl.replaceChildren(termBtn, resumeOpenBtn, resumeCopyBtn, summarizeBtn, archiveBtn);
 }
 function renderMsgDesc(desc, resultMap) {
     const { msg: m, hasText, hasTools } = desc;
@@ -1841,6 +1884,28 @@ async function showDetail(sessionId) {
     renderDetailMessages(detail, messagesEl);
 }
 initResizeHandle(byId);
+initTerminalResizeHandle(byId, setStoredHeight);
+// Ctrl+` (or Cmd+`) to toggle terminal
+document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === '`') {
+        e.preventDefault();
+        if (!selectedSession)
+            return;
+        if (isTerminalOpen()) {
+            closeTerminal().then(() => {
+                hideTerminalPane();
+                renderDetailFooter(selectedSession);
+            });
+        }
+        else {
+            showTerminalPane();
+            const container = byId('terminalContainer');
+            openTerminal(selectedSession, container).then(() => {
+                renderDetailFooter(selectedSession);
+            });
+        }
+    }
+});
 // --- Init ---
 const searchClearBtn = byId('searchClearBtn');
 byId('search').addEventListener('input', () => {
@@ -1873,6 +1938,7 @@ if (isTauri && tauriWindow.event) {
         themePref = e.payload;
         localStorage.setItem('csm-theme', themePref);
         applyTheme(themePref);
+        updateTerminalTheme();
     });
     listen('menu-terminal', (e) => {
         serverSettings.terminalApp = e.payload;
