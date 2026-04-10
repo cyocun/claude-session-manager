@@ -1,5 +1,5 @@
 import { getSearchTokenFallback, getSearchVariants } from './searchUtils.js';
-import { flashHighlight } from './dom.js';
+import { setHighlight } from './dom.js';
 
 export type ChatSearchFilter = 'all' | 'user' | 'assistant';
 
@@ -235,7 +235,7 @@ export function createChatSearchController(deps: ChatSearchDeps) {
     if (!el) return;
     requestAnimationFrame(() => {
       el.scrollIntoView({ block: 'center' });
-      flashHighlight(el);
+      setHighlight(el, true);
     });
   }
 

@@ -1,5 +1,6 @@
 import { normalizeSearchQuery } from './searchUtils.js';
 import { ICONS } from './icons.js';
+import { setHighlight } from './dom.js';
 export function createFullTextSearchController(deps) {
     const { byId, t, getLang, getSessions, getSelectedProject, projectDisplayName, invoke, renderSessions, showDetail, setSelectedSession, chatSearch, } = deps;
     let searchMode = 'fulltext';
@@ -237,10 +238,10 @@ export function createFullTextSearchController(deps) {
                     item.addEventListener('click', () => {
                         el.querySelectorAll('.search-hit-active').forEach((prev) => {
                             prev.classList.remove('search-hit-active');
-                            prev.style.outline = '';
+                            setHighlight(prev, false);
                         });
                         item.classList.add('search-hit-active');
-                        item.style.outline = '2px solid var(--accent)';
+                        setHighlight(item, true);
                         setSelectedSession(hit.sessionId);
                         void showDetail(hit.sessionId).then(() => {
                             const q = activeResolvedQuery || byId('search').value.trim();

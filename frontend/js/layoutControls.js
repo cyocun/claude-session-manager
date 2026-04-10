@@ -1,3 +1,4 @@
+import { setHighlight } from './dom.js';
 export function initResizeHandle(byId) {
     const handle = byId('resizeHandle');
     let dragging = false;
@@ -31,7 +32,7 @@ export function initKeyboardNavigation(deps) {
         const prev = document.querySelector('.bubble-focused');
         if (prev) {
             prev.classList.remove('bubble-focused');
-            prev.style.outline = '';
+            setHighlight(prev, false);
         }
         focusedBubbleIdx = -1;
     }
@@ -46,9 +47,7 @@ export function initKeyboardNavigation(deps) {
         focusedBubbleIdx = Math.max(0, Math.min(idx, bubbles.length - 1));
         const bubble = bubbles[focusedBubbleIdx];
         bubble.classList.add('bubble-focused');
-        bubble.style.outline = '2px solid var(--accent)';
-        bubble.style.outlineOffset = '2px';
-        bubble.style.borderRadius && (bubble.style.outlineOffset = '2px');
+        setHighlight(bubble, true);
         bubble.scrollIntoView({ block: 'nearest' });
     }
     byId('sessionListPane').addEventListener('click', () => {
