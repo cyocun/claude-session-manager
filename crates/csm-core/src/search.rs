@@ -1,6 +1,5 @@
-use serde_json::Value;
 use tantivy::schema::document::Value as _;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -12,7 +11,7 @@ use tantivy::snippet::SnippetGenerator;
 use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument};
 
 use crate::sessions::{find_session_file, history_file};
-use crate::models::{normalize_message_text, HistoryEntry, RawHistoryEntry, SearchHit, SearchIndexStatus};
+use crate::models::{extract_searchable_messages, HistoryEntry, RawHistoryEntry, SearchHit, SearchIndexStatus};
 
 const MAX_CONTENT_CHARS: usize = 50 * 1024; // 50K chars per document
 const WRITER_HEAP_SIZE: usize = 50 * 1024 * 1024; // 50MB
@@ -44,6 +43,57 @@ impl Drop for IndexingFlagGuard<'_> {
     fn drop(&mut self) {
         self.flag.store(false, Ordering::SeqCst);
     }
+}
+
+/// Parse history.jsonl and collect session_id → project mappings.
+/// When `session_filter` is Some, only sessions in the set are collected.
+fn collect_session_projects(
+    session_filter: Option<&HashSet<&String>>,
+) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+    let history_path = history_file();
+    if !history_path.exists() {
+        return Ok(HashMap::new());
+    }
+
+    let file = File::open(&history_path)?;
+    let mut session_map: HashMap<String, String> = HashMap::new();
+    let mut parse_errors = 0usize;
+    let mut read_errors = 0usize;
+
+    for line_result in BufReader::new(file).lines() {
+        let line = match line_result {
+            Ok(line) => line,
+            Err(_) => {
+                read_errors += 1;
+                continue;
+            }
+        };
+        if let Ok(raw) = serde_json::from_str::<RawHistoryEntry>(&line) {
+            let entry: HistoryEntry = raw.into();
+            if entry.session_id.is_empty() {
+                continue;
+            }
+            if let Some(filter) = session_filter {
+                if !filter.contains(&entry.session_id) {
+                    continue;
+                }
+            }
+            session_map
+                .entry(entry.session_id)
+                .or_insert(entry.project);
+        } else {
+            parse_errors += 1;
+        }
+    }
+
+    if parse_errors > 0 || read_errors > 0 {
+        eprintln!(
+            "Search index: ignored {} parse errors and {} read errors while scanning history",
+            parse_errors, read_errors
+        );
+    }
+
+    Ok(session_map)
 }
 
 impl SearchIndex {
@@ -191,7 +241,7 @@ impl SearchIndex {
         session_file: &Path,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let file = File::open(session_file)?;
-        let messages = Self::extract_searchable_messages(&file);
+        let messages = extract_searchable_messages(&file);
 
         let writer = self.writer.lock().unwrap();
 
@@ -220,82 +270,6 @@ impl SearchIndex {
             .insert(session_id.to_string(), file_size);
 
         Ok(())
-    }
-
-    fn extract_searchable_messages(file: &File) -> Vec<SearchableMessage> {
-        let mut messages = Vec::new();
-        let mut message_index: u32 = 0;
-
-        for line in BufReader::new(file).lines().flatten() {
-            let msg: Value = match serde_json::from_str(&line) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-
-            let msg_type = match msg.get("type").and_then(|v| v.as_str()) {
-                Some(t) if t == "user" || t == "assistant" => t.to_string(),
-                _ => continue,
-            };
-
-            let message = match msg.get("message") {
-                Some(m) => m,
-                None => continue,
-            };
-
-            let content_val = match message.get("content") {
-                Some(c) => c,
-                None => continue,
-            };
-
-            let timestamp = msg
-                .get("timestamp")
-                .and_then(|v| {
-                    v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))
-                })
-                .unwrap_or(0);
-
-            let mut text_parts: Vec<String> = Vec::new();
-
-            match content_val {
-                Value::String(s) => {
-                    text_parts.push(normalize_message_text(s));
-                }
-                Value::Array(blocks) => {
-                    for block in blocks {
-                        match block {
-                            Value::String(s) => text_parts.push(normalize_message_text(s)),
-                            Value::Object(_) => {
-                                if let Some(btype) = block.get("type").and_then(|v| v.as_str()) {
-                                    // Only index user/assistant text, skip tool_use and tool_result
-                                    if btype == "text" {
-                                        if let Some(t) =
-                                            block.get("text").and_then(|v| v.as_str())
-                                        {
-                                            text_parts.push(normalize_message_text(t));
-                                        }
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-
-            if !text_parts.is_empty() {
-                messages.push(SearchableMessage {
-                    content: text_parts.join("\n"),
-                    msg_type,
-                    timestamp,
-                    message_index,
-                });
-            }
-
-            message_index += 1;
-        }
-
-        messages
     }
 
     pub fn search(
@@ -452,43 +426,7 @@ impl SearchIndex {
             flag: &self.is_indexing,
         };
 
-        let history_path = history_file();
-        if !history_path.exists() {
-            return Ok(());
-        }
-
-        // Collect session entries from history
-        let file = File::open(&history_path)?;
-        let mut session_map: HashMap<String, String> = HashMap::new(); // session_id -> project
-        let mut parse_errors = 0usize;
-        let mut read_errors = 0usize;
-
-        for line_result in BufReader::new(file).lines() {
-            let line = match line_result {
-                Ok(line) => line,
-                Err(_) => {
-                    read_errors += 1;
-                    continue;
-                }
-            };
-            if let Ok(raw) = serde_json::from_str::<RawHistoryEntry>(&line) {
-                let entry: HistoryEntry = raw.into();
-                if !entry.session_id.is_empty() {
-                    session_map
-                        .entry(entry.session_id)
-                        .or_insert(entry.project);
-                }
-            } else {
-                parse_errors += 1;
-            }
-        }
-        if parse_errors > 0 || read_errors > 0 {
-            eprintln!(
-                "Search index: ignored {} parse errors and {} read errors while scanning history",
-                parse_errors, read_errors
-            );
-        }
-
+        let session_map = collect_session_projects(None)?;
         *self.total_sessions.lock().unwrap() = session_map.len() as u32;
 
         // Collect entries that need indexing
@@ -531,43 +469,8 @@ impl SearchIndex {
             return Ok(());
         }
 
-        let history_path = history_file();
-        if !history_path.exists() {
-            return Ok(());
-        }
-
-        // Find project for each session_id
-        let file = File::open(&history_path)?;
-        let mut session_project: HashMap<String, String> = HashMap::new();
-        let id_set: std::collections::HashSet<&String> = session_ids.iter().collect();
-
-        let mut parse_errors = 0usize;
-        let mut read_errors = 0usize;
-        for line_result in BufReader::new(file).lines() {
-            let line = match line_result {
-                Ok(line) => line,
-                Err(_) => {
-                    read_errors += 1;
-                    continue;
-                }
-            };
-            if let Ok(raw) = serde_json::from_str::<RawHistoryEntry>(&line) {
-                let entry: HistoryEntry = raw.into();
-                if id_set.contains(&entry.session_id) {
-                    session_project
-                        .entry(entry.session_id)
-                        .or_insert(entry.project);
-                }
-            } else {
-                parse_errors += 1;
-            }
-        }
-        if parse_errors > 0 || read_errors > 0 {
-            eprintln!(
-                "Search index: ignored {} parse errors and {} read errors in incremental update",
-                parse_errors, read_errors
-            );
-        }
+        let id_set: HashSet<&String> = session_ids.iter().collect();
+        let session_project = collect_session_projects(Some(&id_set))?;
 
         for (session_id, project) in &session_project {
             if let Some(session_file) = find_session_file(session_id) {
@@ -592,11 +495,3 @@ impl SearchIndex {
         }
     }
 }
-
-struct SearchableMessage {
-    content: String,
-    msg_type: String,
-    timestamp: u64,
-    message_index: u32,
-}
-
