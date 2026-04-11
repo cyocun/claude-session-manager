@@ -74,10 +74,20 @@ function makeHighlightedPre(text: string, lang: string | null): HTMLElement {
   return pre;
 }
 
+const MARKDOWN_RESULT_TOOLS = new Set([
+  'EnterPlanMode', 'ExitPlanMode', 'ExitWorktree', 'EnterWorktree',
+  'Agent', 'TaskCreate', 'TaskGet', 'TaskOutput',
+]);
+
+function looksLikeMarkdown(text: string): boolean {
+  return /^#{1,6}\s|^\*\*|^- |\n#{1,6}\s|\n- |\n\*\*/.test(text);
+}
+
 export function renderToolBlocks(
   tools: ToolItem[],
   externalResultMap: Record<string, ToolResult> | undefined,
   createEl: (tag: string, attrs?: Record<string, any>, children?: (Node | null | undefined)[]) => HTMLElement,
+  renderMarkdown?: (text: string) => string,
 ): HTMLElement[] {
   const els: HTMLElement[] = [];
   const resultMap: Record<string, ToolResult> = { ...(externalResultMap || {}) };
@@ -154,9 +164,19 @@ export function renderToolBlocks(
         sep.style.cssText = 'border:none;border-top:1px solid var(--code-border);margin:4px 0;';
         body.appendChild(sep);
       }
-      const outputPre = makeHighlightedPre(result.output, 'bash');
-      outputPre.className += ' tool-result-output';
-      body.appendChild(outputPre);
+      const useMarkdown = renderMarkdown &&
+        (MARKDOWN_RESULT_TOOLS.has(tool.name) || looksLikeMarkdown(result.output));
+      if (useMarkdown) {
+        const mdDiv = document.createElement('div');
+        mdDiv.className = 'md-content tool-result-markdown';
+        // renderMarkdown already applies DOMPurify.sanitize() internally
+        mdDiv.innerHTML = renderMarkdown(result.output);
+        body.appendChild(mdDiv);
+      } else {
+        const outputPre = makeHighlightedPre(result.output, 'bash');
+        outputPre.className += ' tool-result-output';
+        body.appendChild(outputPre);
+      }
       hasBody = true;
     }
 

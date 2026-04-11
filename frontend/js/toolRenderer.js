@@ -58,7 +58,14 @@ function makeHighlightedPre(text, lang) {
     pre.appendChild(code);
     return pre;
 }
-export function renderToolBlocks(tools, externalResultMap, createEl) {
+const MARKDOWN_RESULT_TOOLS = new Set([
+    'EnterPlanMode', 'ExitPlanMode', 'ExitWorktree', 'EnterWorktree',
+    'Agent', 'TaskCreate', 'TaskGet', 'TaskOutput',
+]);
+function looksLikeMarkdown(text) {
+    return /^#{1,6}\s|^\*\*|^- |\n#{1,6}\s|\n- |\n\*\*/.test(text);
+}
+export function renderToolBlocks(tools, externalResultMap, createEl, renderMarkdown) {
     const els = [];
     const resultMap = { ...(externalResultMap || {}) };
     tools.filter((t) => t.name === '_result').forEach((t) => { resultMap[t.id] = t; });
@@ -135,9 +142,20 @@ export function renderToolBlocks(tools, externalResultMap, createEl) {
                 sep.style.cssText = 'border:none;border-top:1px solid var(--code-border);margin:4px 0;';
                 body.appendChild(sep);
             }
-            const outputPre = makeHighlightedPre(result.output, 'bash');
-            outputPre.className += ' tool-result-output';
-            body.appendChild(outputPre);
+            const useMarkdown = renderMarkdown &&
+                (MARKDOWN_RESULT_TOOLS.has(tool.name) || looksLikeMarkdown(result.output));
+            if (useMarkdown) {
+                const mdDiv = document.createElement('div');
+                mdDiv.className = 'md-content tool-result-markdown';
+                // renderMarkdown already applies DOMPurify.sanitize() internally
+                mdDiv.innerHTML = renderMarkdown(result.output);
+                body.appendChild(mdDiv);
+            }
+            else {
+                const outputPre = makeHighlightedPre(result.output, 'bash');
+                outputPre.className += ' tool-result-output';
+                body.appendChild(outputPre);
+            }
             hasBody = true;
         }
         header.addEventListener('click', () => {
