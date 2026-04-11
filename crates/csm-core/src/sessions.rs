@@ -85,6 +85,12 @@ pub fn find_session_file(session_id: &str) -> Option<std::path::PathBuf> {
     None
 }
 
+/// Slash commands like /clear, /effort, /fast are CLI meta-commands
+/// that don't represent the user's actual work intent.
+fn is_ephemeral_command(display: &str) -> bool {
+    display.trim().starts_with('/')
+}
+
 pub fn list_sessions(include_archived: bool) -> Vec<SessionSummary> {
     let path = history_file();
     if !path.exists() {
@@ -120,6 +126,13 @@ pub fn list_sessions(include_archived: bool) -> Vec<SessionSummary> {
         sessions
             .entry(entry.session_id.clone())
             .and_modify(|s| {
+                // Replace first_display if it's a slash command and this entry has real content
+                if is_ephemeral_command(&s.first_display)
+                    && !entry.display.is_empty()
+                    && !is_ephemeral_command(&entry.display)
+                {
+                    s.first_display = entry.display.clone();
+                }
                 if entry.timestamp > s.last_timestamp {
                     s.last_timestamp = entry.timestamp;
                     if !entry.display.is_empty() {

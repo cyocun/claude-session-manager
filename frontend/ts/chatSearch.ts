@@ -228,6 +228,21 @@ export function createChatSearchController(deps: ChatSearchDeps) {
       el.style.outline = '';
       el.style.outlineOffset = '';
     }, 2000);
+
+    // Sync chatHitIndex to the hit closest to the scrolled-to element
+    if (chatHits.length > 0) {
+      const targetTop = el.getBoundingClientRect().top;
+      let bestIdx = 0;
+      let bestDist = Infinity;
+      for (let i = 0; i < chatHits.length; i++) {
+        const dist = Math.abs(chatHits[i].getBoundingClientRect().top - targetTop);
+        if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+      }
+      chatHitIndex = bestIdx;
+      chatHits.forEach((h) => h.classList.remove('chat-hit-active'));
+      chatHits[chatHitIndex].classList.add('chat-hit-active');
+      byId('chatSearchCount').textContent = (chatHitIndex + 1) + '/' + chatHits.length;
+    }
   }
 
   return {
