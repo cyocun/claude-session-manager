@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "identifier": "com.cyocun.claude-session-manager",
   "build": {
-    "frontendDist": "../frontend"
+    "frontendDist": "../frontend",
+    "beforeBuildCommand": "cargo build --release -p csm-mcp && install target/release/csm-mcp target/release/csm-mcp-aarch64-apple-darwin"
   },
   "app": {
     "withGlobalTauri": true,
@@ -26,6 +27,7 @@
   "bundle": {
     "active": true,
     "targets": ["dmg", "app"],
+    "externalBin": ["../target/release/csm-mcp"],
     "icon": [
       "icons/icon.png"
     ],
