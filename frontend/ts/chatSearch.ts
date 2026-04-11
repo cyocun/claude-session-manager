@@ -1,5 +1,5 @@
-import { getSearchTokenFallback, getSearchVariants } from './searchUtils.js';
-import { setHighlight } from './dom.js';
+import { getSearchTokenFallback, getSearchVariants, isVisibleTextNode, filterRootsContainingAllTokens } from './searchUtils.js';
+import { createEl, setHighlight } from './dom.js';
 
 export type ChatSearchFilter = 'all' | 'user' | 'assistant';
 
@@ -28,6 +28,13 @@ export function createChatSearchController(deps: ChatSearchDeps) {
     chatHits = [];
     chatHitIndex = -1;
     cancelScroll();
+  }
+
+  function clear(): void {
+    const chatInput = document.getElementById('chatSearch') as HTMLInputElement | null;
+    if (!chatInput || !chatInput.value) return;
+    chatInput.value = '';
+    doSearch();
   }
 
   function smoothScrollTo(el: HTMLElement): void {
@@ -76,31 +83,6 @@ export function createChatSearchController(deps: ChatSearchDeps) {
 
   function collectMatches(
     roots: HTMLElement[],
-    query: string,
-  ): Array<{ node: Text; start: number; length: number }> {
-    return collectMatchesForNeedles(roots, [query]);
-  }
-
-  function isVisibleTextNode(node: Text): boolean {
-    // Walk up the tree to check all ancestors up to the root
-    let el: HTMLElement | null = node.parentElement;
-    while (el) {
-      const tag = el.tagName;
-      // Skip alt/title text from media elements
-      if (tag === 'IMG' || tag === 'VIDEO' || tag === 'AUDIO' || tag === 'SOURCE') return false;
-      // Skip hidden containers
-      if (el.style.display === 'none' || el.style.visibility === 'hidden') return false;
-      if (el.style.height === '0' || el.style.height === '0px') return false;
-      if (el.offsetHeight === 0 && el.offsetWidth === 0) return false;
-      // Stop at the search root (.md-content)
-      if (el.classList.contains('md-content')) break;
-      el = el.parentElement;
-    }
-    return true;
-  }
-
-  function collectMatchesForNeedles(
-    roots: HTMLElement[],
     needles: string[],
   ): Array<{ node: Text; start: number; length: number }> {
     const matches: Array<{ node: Text; start: number; length: number }> = [];
@@ -136,15 +118,6 @@ export function createChatSearchController(deps: ChatSearchDeps) {
     return matches;
   }
 
-  function filterRootsContainingAllTokens(roots: HTMLElement[], tokens: string[]): HTMLElement[] {
-    if (tokens.length <= 1) return roots;
-    const lowerTokens = tokens.map((t) => t.toLocaleLowerCase());
-    return roots.filter((root) => {
-      const text = (root.textContent || '').toLocaleLowerCase();
-      return lowerTokens.every((token) => text.includes(token));
-    });
-  }
-
   function doSearch(): void {
     if (!isAllMessagesRendered() && window._flushRender) window._flushRender();
 
@@ -172,14 +145,14 @@ export function createChatSearchController(deps: ChatSearchDeps) {
     let matches: Array<{ node: Text; start: number; length: number }> = [];
     for (const variant of variants) {
       if (variant.length < 2) continue;
-      matches = collectMatches(roots, variant);
+      matches = collectMatches(roots, [variant]);
       if (matches.length > 0) break;
     }
     if (matches.length === 0) {
       const tokenFallback = getSearchTokenFallback(q).filter((token) => token.length >= 2);
       if (tokenFallback.length > 0) {
         const filteredRoots = filterRootsContainingAllTokens(roots, tokenFallback);
-        matches = collectMatchesForNeedles(filteredRoots, tokenFallback);
+        matches = collectMatches(filteredRoots, tokenFallback);
       }
     }
 
@@ -254,13 +227,123 @@ export function createChatSearchController(deps: ChatSearchDeps) {
     }
   }
 
+  function createSearchUI(uiT: (key: string) => string): { controlsRow: HTMLElement } {
+    const chatSearchInput = createEl('input', {
+      type: 'text', id: 'chatSearch',
+      className: 'mac-input',
+      spellcheck: 'false',
+      autocorrect: 'off',
+      autocapitalize: 'off',
+      autocomplete: 'off',
+    }) as HTMLInputElement;
+    chatSearchInput.style.cssText = 'width:100%;height:28px;padding:4px 60px 4px 8px;box-sizing:border-box;';
+    chatSearchInput.placeholder = uiT('chatSearchPlaceholder');
+
+    const chatCount = createEl('span', { id: 'chatSearchCount', className: 'text-[10px]' });
+    chatCount.style.cssText = 'color:var(--text-faint);white-space:nowrap;';
+    const prevBtn = createEl('button', { id: 'chatSearchPrev', className: 'hidden', textContent: '\u25B2' });
+    prevBtn.style.cssText = 'font-size:9px;color:var(--text-muted);padding:0 2px;line-height:1;cursor:default;background:none;border:none;pointer-events:auto;';
+    const nextBtn = createEl('button', { id: 'chatSearchNext', className: 'hidden', textContent: '\u25BC' });
+    nextBtn.style.cssText = 'font-size:9px;color:var(--text-muted);padding:0 2px;line-height:1;cursor:default;background:none;border:none;pointer-events:auto;';
+    const chatClearBtn = createEl('button', { id: 'chatSearchClear', textContent: '\u00D7' });
+    chatClearBtn.style.cssText = 'font-size:13px;color:var(--text-muted);padding:0 2px;line-height:1;cursor:default;background:none;border:none;pointer-events:auto;display:none;';
+
+    const searchOverlay = createEl('div', {}, [chatCount, prevBtn, nextBtn, chatClearBtn]);
+    searchOverlay.style.cssText = 'display:grid;grid-auto-flow:column;grid-auto-columns:max-content;align-items:center;gap:2px;position:absolute;right:6px;top:50%;transform:translateY(-50%);pointer-events:auto;';
+    const searchGroup = createEl('div', {}, [chatSearchInput, searchOverlay]);
+    searchGroup.style.cssText = 'display:grid;position:relative;min-width:0;';
+
+    // Filter segmented control: All / AI / User
+    function svgEl(tag: string, attrs: Record<string, string>, children?: SVGElement[]): SVGElement {
+      const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+      for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+      if (children) children.forEach(c => el.appendChild(c));
+      return el;
+    }
+    const bubbleSvgAttrs = { width: '14', height: '14', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' };
+    function bubbleIcon(key: string): SVGElement {
+      if (key === 'all') {
+        return svgEl('svg', bubbleSvgAttrs, [
+          svgEl('path', { d: 'M21 14l-3 -3h-7a1 1 0 0 1 -1 -1v-6a1 1 0 0 1 1 -1h9a1 1 0 0 1 1 1v10' }),
+          svgEl('path', { d: 'M14 15v2a1 1 0 0 1 -1 1h-7l-3 3v-10a1 1 0 0 1 1 -1h2' }),
+        ]);
+      }
+      const svg = svgEl('svg', bubbleSvgAttrs, [
+        svgEl('path', { d: 'M18 4a3 3 0 0 1 3 3v8a3 3 0 0 1 -3 3h-5l-5 3v-3h-2a3 3 0 0 1 -3 -3v-8a3 3 0 0 1 3 -3h12' }),
+      ]);
+      if (key === 'user') (svg as unknown as HTMLElement).style.transform = 'scaleX(-1)';
+      return svg;
+    }
+
+    type FilterDef = { key: ChatSearchFilter; label: string };
+    const filters: FilterDef[] = [
+      { key: 'all', label: uiT('chatFilterAll') },
+      { key: 'assistant', label: uiT('chatFilterAI') },
+      { key: 'user', label: uiT('chatFilterUser') },
+    ];
+    const filterBar = createEl('div', { className: 'mac-segmented' });
+    const filterBtns: HTMLElement[] = [];
+    for (const f of filters) {
+      const btn = createEl('button', {
+        className: 'mac-segmented-btn' + (f.key === searchFilter ? ' active' : ''),
+      });
+      btn.appendChild(bubbleIcon(f.key));
+      btn.title = f.label;
+      btn.style.cssText += 'display:inline-flex;align-items:center;justify-content:center;padding:3px 7px;';
+      btn.addEventListener('click', () => {
+        setFilter(f.key);
+        filterBtns.forEach((b, i) => {
+          b.classList.toggle('active', filters[i].key === f.key);
+        });
+        doSearch();
+      });
+      filterBtns.push(btn);
+      filterBar.appendChild(btn);
+    }
+
+    const controlsRow = createEl('div', { className: 'min-w-0' }, [filterBar, searchGroup]);
+    controlsRow.style.cssText = 'display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;';
+
+    // Bind search input events
+    let chatSearchTimer: ReturnType<typeof setTimeout> | undefined;
+    chatSearchInput.addEventListener('input', () => {
+      chatClearBtn.style.display = chatSearchInput.value ? 'block' : 'none';
+      clearTimeout(chatSearchTimer);
+      chatSearchTimer = setTimeout(() => doSearch(), 200);
+    });
+    chatClearBtn.addEventListener('click', () => {
+      chatSearchInput.value = '';
+      chatClearBtn.style.display = 'none';
+      doSearch();
+      chatSearchInput.focus();
+    });
+    nextBtn.addEventListener('click', () => next());
+    prevBtn.addEventListener('click', () => prev());
+    chatSearchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.shiftKey ? prev() : next(); e.preventDefault(); }
+      if (e.key === 'Escape') {
+        const target = e.target as HTMLInputElement | null;
+        if (target) {
+          target.value = '';
+          chatClearBtn.style.display = 'none';
+          doSearch();
+          target.blur();
+        }
+      }
+    });
+
+    return { controlsRow };
+  }
+
   return {
     reset,
+    clear,
     doSearch,
     next,
     prev,
     scrollToMessageIndex,
     getFilter,
     setFilter,
+    createSearchUI,
   };
 }

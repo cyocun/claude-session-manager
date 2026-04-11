@@ -40,3 +40,15 @@ export type ServerSettings = {
   terminalApp?: string;
   [key: string]: unknown;
 };
+
+export type SearchHit = {
+  project: string;
+  sessionId: string;
+  msgType: string;
+  snippet: string;
+  messageIndex: number;
+  timestamp?: number;
+  score?: number;
+};
+
+export type SearchMode = 'fulltext' | 'similar';

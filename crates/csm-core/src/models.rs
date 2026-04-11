@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 
 fn extract_tag_value(text: &str, tag: &str) -> Option<String> {
     let open = format!("<{}>", tag);
@@ -374,6 +377,88 @@ pub struct SearchIndexStatus {
     pub total_sessions: u32,
     pub indexed_sessions: u32,
     pub is_indexing: bool,
+}
+
+pub struct SearchableMessage {
+    pub content: String,
+    pub msg_type: String,
+    pub timestamp: u64,
+    pub message_index: u32,
+}
+
+pub fn extract_searchable_messages(file: &File) -> Vec<SearchableMessage> {
+    let mut messages = Vec::new();
+    let mut message_index: u32 = 0;
+
+    for line in BufReader::new(file).lines().flatten() {
+        let msg: Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let msg_type = match msg.get("type").and_then(|v| v.as_str()) {
+            Some(t) if t == "user" || t == "assistant" => t.to_string(),
+            _ => continue,
+        };
+
+        let message = match msg.get("message") {
+            Some(m) => m,
+            None => continue,
+        };
+
+        let content_val = match message.get("content") {
+            Some(c) => c,
+            None => continue,
+        };
+
+        let timestamp = msg
+            .get("timestamp")
+            .and_then(|v| {
+                v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            })
+            .unwrap_or(0);
+
+        let mut text_parts: Vec<String> = Vec::new();
+
+        match content_val {
+            Value::String(s) => {
+                text_parts.push(normalize_message_text(s));
+            }
+            Value::Array(blocks) => {
+                for block in blocks {
+                    match block {
+                        Value::String(s) => text_parts.push(normalize_message_text(s)),
+                        Value::Object(_) => {
+                            if let Some(btype) = block.get("type").and_then(|v| v.as_str()) {
+                                if btype == "text" {
+                                    if let Some(t) =
+                                        block.get("text").and_then(|v| v.as_str())
+                                    {
+                                        text_parts.push(normalize_message_text(t));
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        if !text_parts.is_empty() {
+            messages.push(SearchableMessage {
+                content: text_parts.join("\n"),
+                msg_type,
+                timestamp,
+                message_index,
+            });
+        }
+
+        message_index += 1;
+    }
+
+    messages
 }
 
 #[derive(Debug, Serialize, Clone, Default)]
