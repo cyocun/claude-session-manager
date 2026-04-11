@@ -7,7 +7,7 @@ fn claude_dir() -> std::path::PathBuf {
     super::sessions::claude_dir()
 }
 
-fn find_project_for_session(session_id: &str) -> Option<String> {
+pub fn find_project_for_session(session_id: &str) -> Option<String> {
     let path = claude_dir().join("history.jsonl");
     let file = File::open(&path).ok()?;
     for line in BufReader::new(file).lines().flatten() {

@@ -1,3 +1,4 @@
+import { setHighlight } from './dom.js';
 export function initResizeHandle(byId) {
     const handle = byId('resizeHandle');
     let dragging = false;
@@ -23,6 +24,40 @@ export function initResizeHandle(byId) {
         document.body.style.userSelect = '';
     });
 }
+export function initTerminalResizeHandle(byId, onHeightChange) {
+    const handle = byId('terminalResizeHandle');
+    const container = byId('terminalContainer');
+    let dragging = false;
+    let startY = 0;
+    let startH = 0;
+    handle.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        dragging = true;
+        startY = e.clientY;
+        startH = container.offsetHeight;
+        handle.classList.add('active');
+        document.body.style.cursor = 'row-resize';
+        document.body.style.userSelect = 'none';
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging)
+            return;
+        // Drag up → increase terminal height, drag down → decrease
+        const delta = startY - e.clientY;
+        const maxH = window.innerHeight * 0.7;
+        const newH = Math.max(150, Math.min(maxH, startH + delta));
+        container.style.height = newH + 'px';
+    });
+    document.addEventListener('mouseup', () => {
+        if (!dragging)
+            return;
+        dragging = false;
+        handle.classList.remove('active');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        onHeightChange(container.offsetHeight);
+    });
+}
 export function initKeyboardNavigation(deps) {
     const { byId, getSelectedSession } = deps;
     let focusPane = 'left';
@@ -31,7 +66,7 @@ export function initKeyboardNavigation(deps) {
         const prev = document.querySelector('.bubble-focused');
         if (prev) {
             prev.classList.remove('bubble-focused');
-            prev.style.outline = '';
+            setHighlight(prev, false);
         }
         focusedBubbleIdx = -1;
     }
@@ -46,9 +81,7 @@ export function initKeyboardNavigation(deps) {
         focusedBubbleIdx = Math.max(0, Math.min(idx, bubbles.length - 1));
         const bubble = bubbles[focusedBubbleIdx];
         bubble.classList.add('bubble-focused');
-        bubble.style.outline = '2px solid var(--accent)';
-        bubble.style.outlineOffset = '2px';
-        bubble.style.borderRadius && (bubble.style.outlineOffset = '2px');
+        setHighlight(bubble, true);
         bubble.scrollIntoView({ block: 'nearest' });
     }
     byId('sessionListPane').addEventListener('click', () => {

@@ -24,3 +24,9 @@ export function getById<T extends HTMLElement = HTMLElement>(id: string): T {
   }
   return el as T;
 }
+
+const HIGHLIGHT_CLASS = 'accent-highlight';
+
+export function setHighlight(el: HTMLElement, on: boolean): void {
+  el.classList.toggle(HIGHLIGHT_CLASS, on);
+}

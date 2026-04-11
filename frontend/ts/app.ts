@@ -1,5 +1,5 @@
 import { detectLang, translate } from './i18n.js';
-import { createEl, getById } from './dom.js';
+import { createEl, getById, setHighlight } from './dom.js';
 import { getThemePref, applyTheme, watchSystemTheme } from './theme.js';
 import { invoke, invokeStrict, isTauri } from './tauri.js';
 import { isRemoteHost, shortPath, shortPathElements, timeAgo } from './utils.js';
@@ -16,10 +16,19 @@ import { createChatSearchController, type ChatSearchFilter } from './chatSearch.
 import { createFullTextSearchController } from './fullTextSearch.js';
 import { renderToolBlocks } from './toolRenderer.js';
 import { createSessionActions } from './sessionActions.js';
-import { initKeyboardNavigation, initResizeHandle } from './layoutControls.js';
+import { initKeyboardNavigation, initResizeHandle, initTerminalResizeHandle } from './layoutControls.js';
 import type { DetailMessage, ProjectGroup, ProjectInfo, ServerSettings, SessionDetail, SessionSummary } from './types.js';
 import { hasSessionIdentityOrderChanged, patchSessionListItems } from './sessionListView.js';
 import { ICONS } from './icons.js';
+import {
+  openTerminal,
+  closeTerminal,
+  isTerminalOpen,
+  updateTerminalTheme,
+  focusTerminal,
+  getStoredHeight,
+  setStoredHeight,
+} from './terminal.js';
 
 const tauriWindow = window.__TAURI__ as any;
 const byId = <T extends HTMLElement = HTMLElement>(id: string): T => getById<T>(id);
@@ -114,7 +123,7 @@ function applyI18n() {
 // --- Theme ---
 let themePref = getThemePref();
 watchSystemTheme(() => {
-  if (themePref === 'system') applyTheme(themePref);
+  if (themePref === 'system') { applyTheme(themePref); updateTerminalTheme(); }
 });
 
 // --- Markdown ---
@@ -1562,8 +1571,34 @@ function renderSessions() {
   });
 }
 
+function showTerminalPane(): void {
+  const container = byId('terminalContainer');
+  const handle = byId('terminalResizeHandle');
+  const pane = byId('detailPane');
+  const h = getStoredHeight();
+  container.style.display = 'block';
+  container.style.height = h + 'px';
+  handle.style.display = 'block';
+  // Update grid to include terminal rows: titlebar, header, messages, resize-handle, terminal, footer
+  pane.style.gridTemplateRows = '38px auto 1fr auto auto auto';
+}
+
+function hideTerminalPane(): void {
+  const container = byId('terminalContainer');
+  const handle = byId('terminalResizeHandle');
+  const pane = byId('detailPane');
+  container.style.display = 'none';
+  handle.style.display = 'none';
+  pane.style.gridTemplateRows = '38px auto 1fr auto';
+}
+
 function prepareDetailPane(pane: HTMLElement, messagesEl: HTMLElement): void {
   stopDetailRefresh();
+  // Close any open terminal when switching sessions
+  if (isTerminalOpen()) {
+    closeTerminal();
+    hideTerminalPane();
+  }
   document.body.style.gridTemplateColumns = '280px 1px 1fr';
   if (isTauri) {
     tauriWindow.window.getCurrentWindow().setMinSize(new tauriWindow.window.LogicalSize(700, 500));
@@ -1606,8 +1641,7 @@ function renderDetailHeader(sessionId: string, detail: SessionDetail, headerEl: 
     const item = findSessionItemById(sessionId);
     if (item) {
       item.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      item.style.outline = '2px solid var(--accent)';
-      setTimeout(() => { item.style.outline = ''; }, 1500);
+      setHighlight(item, true);
     }
   });
 
@@ -1755,7 +1789,27 @@ function renderDetailFooter(sessionId: string): void {
     if (res?.ok) actions.showToast(t('toastSummarizing'));
     else actions.showToast(t('toastError') + (res?.error || ''));
   });
-  footerEl.replaceChildren(resumeOpenBtn, resumeCopyBtn, summarizeBtn, archiveBtn);
+  const termBtn = mkBtn(
+    isTerminalOpen() ? t('closeTerminal') : t('openTerminal'),
+    false,
+    async () => {
+      if (isTerminalOpen()) {
+        hideTerminalPane();
+        await closeTerminal();
+        // Re-render footer to update button text
+        renderDetailFooter(sessionId);
+      } else {
+        showTerminalPane();
+        const container = byId('terminalContainer');
+        await openTerminal(sessionId, container);
+        renderDetailFooter(sessionId);
+      }
+    },
+  );
+  // Add terminal icon to button
+  termBtn.innerHTML = ICONS.terminal + ' ' + termBtn.textContent;
+
+  footerEl.replaceChildren(termBtn, resumeOpenBtn, resumeCopyBtn, summarizeBtn, archiveBtn);
 }
 
 function renderMsgDesc(desc: MsgDesc, resultMap: Record<string, any>): HTMLElement[] {
@@ -1764,7 +1818,7 @@ function renderMsgDesc(desc: MsgDesc, resultMap: Record<string, any>): HTMLEleme
   const els: HTMLElement[] = [];
 
   if (hasTools) {
-    const toolEls = renderToolBlocks(m.tools || [], resultMap, createEl, renderMarkdown);
+    const toolEls = renderToolBlocks(m.tools || [], resultMap, createEl);
     if (toolEls.length > 0) {
       if (hasText) {
         const bubbleInner = createEl('div', { className: 'md-content text-sm leading-relaxed break-words' });
@@ -1993,6 +2047,27 @@ async function showDetail(sessionId: string) {
 }
 
 initResizeHandle(byId);
+initTerminalResizeHandle(byId, setStoredHeight);
+
+// Ctrl+` (or Cmd+`) to toggle terminal
+document.addEventListener('keydown', (e: KeyboardEvent) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === '`') {
+    e.preventDefault();
+    if (!selectedSession) return;
+    if (isTerminalOpen()) {
+      closeTerminal().then(() => {
+        hideTerminalPane();
+        renderDetailFooter(selectedSession!);
+      });
+    } else {
+      showTerminalPane();
+      const container = byId('terminalContainer');
+      openTerminal(selectedSession, container).then(() => {
+        renderDetailFooter(selectedSession!);
+      });
+    }
+  }
+});
 
 // --- Init ---
 
@@ -2023,7 +2098,7 @@ byId('newSessionBtn').addEventListener('click', async () => {
 if (isTauri && tauriWindow.event) {
   const { listen } = tauriWindow.event;
   listen('menu-theme', (e: any) => {
-    themePref = e.payload; localStorage.setItem('csm-theme', themePref); applyTheme(themePref);
+    themePref = e.payload; localStorage.setItem('csm-theme', themePref); applyTheme(themePref); updateTerminalTheme();
   });
   listen('menu-terminal', (e: any) => {
     serverSettings.terminalApp = e.payload;

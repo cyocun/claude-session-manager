@@ -7,7 +7,7 @@ mod models;
 mod search;
 mod tray;
 
-use commands::{archive, clipboard, projects, resume, search as search_cmd, sessions, settings};
+use commands::{archive, clipboard, projects, pty, resume, search as search_cmd, sessions, settings};
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
@@ -77,6 +77,11 @@ fn main() {
             search_cmd::search_sessions,
             search_cmd::get_search_index_status,
             search_cmd::update_search_index,
+            pty::pty_spawn,
+            pty::pty_spawn_new,
+            pty::pty_write,
+            pty::pty_resize,
+            pty::pty_close,
             sync_menu_state,
         ])
         .setup(|app| {
@@ -101,6 +106,7 @@ fn main() {
                     )
                 }
             };
+            app.manage(pty::PtyState::new());
             app.manage(search_index.clone());
 
             // Background index build

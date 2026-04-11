@@ -18,3 +18,5 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 arboard = "3"
 base64 = "0.22"
 regex = "1"
+portable-pty = "0.8"
+uuid = { version = "1", features = ["v4"] }

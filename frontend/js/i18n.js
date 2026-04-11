@@ -105,6 +105,8 @@ export const I18N = {
         chatFilterAll: 'All',
         chatFilterUser: 'User',
         chatFilterAI: 'AI',
+        openTerminal: 'ターミナル',
+        closeTerminal: 'ターミナルを閉じる',
     },
     en: {
         searchPlaceholder: 'Search...',
@@ -212,6 +214,8 @@ export const I18N = {
         chatFilterAll: 'All',
         chatFilterUser: 'User',
         chatFilterAI: 'AI',
+        openTerminal: 'Terminal',
+        closeTerminal: 'Close Terminal',
     },
 };
 export function detectLang() {
