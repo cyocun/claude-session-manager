@@ -93,7 +93,7 @@ export function getStoredHeight() {
 export function setStoredHeight(h) {
     localStorage.setItem(STORAGE_KEY_HEIGHT, String(Math.max(MIN_HEIGHT, Math.round(h))));
 }
-export async function openTerminal(sessionId, container) {
+export async function openTerminal(sessionId, container, onExit) {
     if (!isTauri)
         return;
     // Close existing terminal if any
@@ -107,9 +107,9 @@ export async function openTerminal(sessionId, container) {
         cursorBlink: true,
         allowProposedApi: true,
         scrollback: 5000,
-        convertEol: true,
+        convertEol: false,
     });
-    const fitAddon = new FitAddon();
+    const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
     term.open(container);
     fitAddon.fit();
@@ -140,14 +140,23 @@ export async function openTerminal(sessionId, container) {
         const text = b64Decode(payload.data);
         term.write(text);
     });
-    // PTY exit → show message
+    // PTY exit → cleanup and notify caller
     exitUnlisten = await tauriEvent.listen('pty-exit', (event) => {
         const payload = event.payload;
         if (payload.ptyId !== ptyId)
             return;
-        const code = payload.exitCode !== null ? payload.exitCode : '?';
-        term.writeln(`\r\n\x1b[90m[Process exited with code ${code}]\x1b[0m`);
         activePtyId = null;
+        closeTerminal().then(() => onExit?.());
+    });
+    // Shift+Enter → send newline escape sequence (kitty keyboard protocol)
+    term.attachCustomKeyEventHandler((e) => {
+        if (e.type === 'keydown' && e.key === 'Enter' && e.shiftKey) {
+            if (activePtyId) {
+                invoke('pty_write', { ptyId: activePtyId, data: b64Encode('\x1b[13;2u') });
+            }
+            return false; // prevent default xterm handling
+        }
+        return true;
     });
     // xterm.js input → PTY
     term.onData((data) => {
@@ -170,7 +179,7 @@ export async function openTerminal(sessionId, container) {
     resizeObserver.observe(container);
     term.focus();
 }
-export async function openTerminalNew(project, container) {
+export async function openTerminalNew(project, container, onExit) {
     if (!isTauri)
         return;
     await closeTerminal();
@@ -182,9 +191,9 @@ export async function openTerminalNew(project, container) {
         cursorBlink: true,
         allowProposedApi: true,
         scrollback: 5000,
-        convertEol: true,
+        convertEol: false,
     });
-    const fitAddon = new FitAddon();
+    const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
     term.open(container);
     fitAddon.fit();
@@ -215,9 +224,18 @@ export async function openTerminalNew(project, container) {
         const payload = event.payload;
         if (payload.ptyId !== ptyId)
             return;
-        const code = payload.exitCode !== null ? payload.exitCode : '?';
-        term.writeln(`\r\n\x1b[90m[Process exited with code ${code}]\x1b[0m`);
         activePtyId = null;
+        closeTerminal().then(() => onExit?.());
+    });
+    // Shift+Enter → send newline escape sequence (kitty keyboard protocol)
+    term.attachCustomKeyEventHandler((e) => {
+        if (e.type === 'keydown' && e.key === 'Enter' && e.shiftKey) {
+            if (activePtyId) {
+                invoke('pty_write', { ptyId: activePtyId, data: b64Encode('\x1b[13;2u') });
+            }
+            return false;
+        }
+        return true;
     });
     term.onData((data) => {
         if (activePtyId) {

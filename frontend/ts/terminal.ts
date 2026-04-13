@@ -5,8 +5,10 @@
 import { invoke, invokeStrict, isTauri } from './tauri.js';
 
 // xterm.js and FitAddon are loaded as UMD globals via <script> tags
+// xterm.js spreads exports onto window (window.Terminal = class),
+// but xterm-addon-fit assigns the namespace object (window.FitAddon = { FitAddon: class }).
 declare const Terminal: any;
-declare const FitAddon: any;
+declare const FitAddon: { FitAddon: new () => any };
 
 const STORAGE_KEY_HEIGHT = 'csm-terminal-height';
 const DEFAULT_HEIGHT = 300;
@@ -107,6 +109,7 @@ export function setStoredHeight(h: number): void {
 export async function openTerminal(
   sessionId: string,
   container: HTMLElement,
+  onExit?: () => void,
 ): Promise<void> {
   if (!isTauri) return;
 
@@ -123,10 +126,10 @@ export async function openTerminal(
     cursorBlink: true,
     allowProposedApi: true,
     scrollback: 5000,
-    convertEol: true,
+    convertEol: false,
   });
 
-  const fitAddon = new FitAddon();
+  const fitAddon = new FitAddon.FitAddon();
   term.loadAddon(fitAddon);
 
   term.open(container);
@@ -161,13 +164,23 @@ export async function openTerminal(
     term.write(text);
   });
 
-  // PTY exit → show message
+  // PTY exit → cleanup and notify caller
   exitUnlisten = await tauriEvent.listen('pty-exit', (event: any) => {
     const payload = event.payload as { ptyId: string; exitCode: number | null };
     if (payload.ptyId !== ptyId) return;
-    const code = payload.exitCode !== null ? payload.exitCode : '?';
-    term.writeln(`\r\n\x1b[90m[Process exited with code ${code}]\x1b[0m`);
     activePtyId = null;
+    closeTerminal().then(() => onExit?.());
+  });
+
+  // Shift+Enter → send newline escape sequence (kitty keyboard protocol)
+  term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+    if (e.type === 'keydown' && e.key === 'Enter' && e.shiftKey) {
+      if (activePtyId) {
+        invoke('pty_write', { ptyId: activePtyId, data: b64Encode('\x1b[13;2u') });
+      }
+      return false; // prevent default xterm handling
+    }
+    return true;
   });
 
   // xterm.js input → PTY
@@ -197,6 +210,7 @@ export async function openTerminal(
 export async function openTerminalNew(
   project: string | null,
   container: HTMLElement,
+  onExit?: () => void,
 ): Promise<void> {
   if (!isTauri) return;
   await closeTerminal();
@@ -210,10 +224,10 @@ export async function openTerminalNew(
     cursorBlink: true,
     allowProposedApi: true,
     scrollback: 5000,
-    convertEol: true,
+    convertEol: false,
   });
 
-  const fitAddon = new FitAddon();
+  const fitAddon = new FitAddon.FitAddon();
   term.loadAddon(fitAddon);
   term.open(container);
   fitAddon.fit();
@@ -246,9 +260,19 @@ export async function openTerminalNew(
   exitUnlisten = await tauriEvent.listen('pty-exit', (event: any) => {
     const payload = event.payload as { ptyId: string; exitCode: number | null };
     if (payload.ptyId !== ptyId) return;
-    const code = payload.exitCode !== null ? payload.exitCode : '?';
-    term.writeln(`\r\n\x1b[90m[Process exited with code ${code}]\x1b[0m`);
     activePtyId = null;
+    closeTerminal().then(() => onExit?.());
+  });
+
+  // Shift+Enter → send newline escape sequence (kitty keyboard protocol)
+  term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+    if (e.type === 'keydown' && e.key === 'Enter' && e.shiftKey) {
+      if (activePtyId) {
+        invoke('pty_write', { ptyId: activePtyId, data: b64Encode('\x1b[13;2u') });
+      }
+      return false;
+    }
+    return true;
   });
 
   term.onData((data: string) => {
