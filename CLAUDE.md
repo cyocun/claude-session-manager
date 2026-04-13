@@ -1,7 +1,5 @@
 # Contributor / AI Notes
 
-プロジェクト固有の非公開メモ（残タスク・戦略・内部的な技術判断）は `docs/` 以下（git ignore）に置く。
-
 ## コード規約
 
 - フロントエンドはバンドラを入れず `tsc` のみでコンパイル（`npm run build:frontend`）。ES Modules でファイル分割する前提で、新規 `.ts` を書いたら `import ... from './foo.js'` の形で参照する
