@@ -266,7 +266,8 @@ function renderProjectCard(p, iconUri) {
     nameEl.title = name;
     const pathEl = createEl('div', { className: 'startup-card-path', textContent: shortPath(p.path) });
     pathEl.title = p.path;
-    const actionsRow = createEl('div', { className: 'startup-card-actions' });
+    const readmeRow = createEl('div', { className: 'startup-card-actions' });
+    const actionsGrid = createEl('div', { className: 'startup-card-actions-grid' });
     const makeIconBtn = (title, iconSvg, onClick, primary = false) => {
         const btn = createEl('button', {
             className: `mac-btn${primary ? ' mac-btn-primary' : ''}`,
@@ -285,34 +286,41 @@ function renderProjectCard(p, iconUri) {
     const resumeIcon = ICONS.refresh;
     const terminalIcon = ICONS.terminal;
     const finderIcon = ICONS.folderOpen;
-    const readmeIcon = ICONS.fileText;
-    actionsRow.appendChild(makeIconBtn(t('newSession'), newIcon, async () => {
+    actionsGrid.appendChild(makeIconBtn(t('newSession'), newIcon, async () => {
         await invoke('start_new_session_in_project', { project: p.path });
         setTimeout(() => fetchSessions(byId('showArchived').checked), 2000);
     }));
     if (p.lastSessionId) {
-        actionsRow.appendChild(makeIconBtn(t('resumeLast'), resumeIcon, () => {
+        actionsGrid.appendChild(makeIconBtn(t('resumeLast'), resumeIcon, () => {
             void actions.resumeInTerminal(p.lastSessionId);
         }, true));
     }
-    actionsRow.appendChild(makeIconBtn(t('openProjectTerminal'), terminalIcon, async () => {
+    actionsGrid.appendChild(makeIconBtn(t('openProjectTerminal'), terminalIcon, async () => {
         const result = await invoke('open_project_in_terminal', { project: p.path });
         if (!result?.ok)
             actions.showToast(t('toastError') + (result?.error || ''));
     }));
-    actionsRow.appendChild(makeIconBtn(t('openProjectFinder'), finderIcon, async () => {
+    actionsGrid.appendChild(makeIconBtn(t('openProjectFinder'), finderIcon, async () => {
         const result = await invoke('open_path', { path: p.path });
         if (result === null)
             actions.showToast(t('toastError'));
     }));
-    actionsRow.appendChild(makeIconBtn(t('readme'), readmeIcon, () => {
-        void openReadmeWindow(p.path, name);
-    }));
+    const readmeBtn = createEl('button', {
+        className: 'mac-btn startup-card-readme-btn',
+        title: t('readme'),
+        textContent: 'README',
+        onClick: (e) => {
+            e.stopPropagation();
+            void openReadmeWindow(p.path, name);
+        },
+    });
+    readmeRow.appendChild(readmeBtn);
     info.appendChild(nameEl);
     info.appendChild(pathEl);
-    info.appendChild(actionsRow);
+    info.appendChild(readmeRow);
     card.appendChild(iconEl);
     card.appendChild(info);
+    card.appendChild(actionsGrid);
     return card;
 }
 async function fetchIcons(list) {

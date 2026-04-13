@@ -577,10 +577,10 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
     }
     .startup-grid {
       display: flex; flex-direction: column; gap: 8px;
-      max-width: 420px; width: 100%;
+      width: 420px; max-width: 100%;
     }
     .startup-card {
-      display: grid; grid-template-columns: 32px 1fr; gap: 8px; align-items: start;
+      display: grid; grid-template-columns: 32px 1fr auto; gap: 8px; align-items: center;
       padding: 10px 12px; border-radius: 8px;
       border: 1px solid var(--border); background: var(--bg-surface);
       transition: background 0.12s, border-color 0.12s;
@@ -603,8 +603,13 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
       font-size: 10px; color: var(--text-muted); margin-top: 1px;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .startup-card-actions { display: flex; gap: 5px; margin-top: 6px; }
+    .startup-card-actions { display: flex; gap: 5px; margin-top: 6px; justify-content: flex-start; }
     .startup-card-actions .mac-btn { font-size: 11px; padding: 2px 8px; }
+    .startup-card-actions-grid {
+      display: grid; grid-template-columns: repeat(2, 28px); gap: 4px;
+      align-self: center;
+    }
+    .startup-card-readme-btn { font-size: 11px; padding: 2px 10px; }
     .startup-more-btn { margin-top: 8px; font-size: 12px; color: var(--text-muted); }
 
     /* Inline images in chat */
