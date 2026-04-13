@@ -84,9 +84,13 @@ pub fn setup_menu(app: &AppHandle) -> tauri::Result<()> {
     let show_archived = CheckMenuItemBuilder::with_id("toggle:archived", "Show Archived")
         .checked(false).build(app)?;
 
+    let check_updates = tauri::menu::MenuItemBuilder::with_id("app:check-updates", "Check for Updates…")
+        .build(app)?;
+
     // App menu (first submenu becomes the app-name menu on macOS)
     let app_sub = SubmenuBuilder::with_id(app, "app_sub", "Claude Sessions")
         .about(None)
+        .item(&check_updates)
         .separator()
         .item(&theme_sub).item(&terminal_sub).item(&lang_sub)
         .separator()
@@ -187,6 +191,8 @@ pub fn setup_menu(app: &AppHandle) -> tauri::Result<()> {
             let _ = app_handle.emit("menu-reload", ());
         } else if id == "file:archive-current" {
             let _ = app_handle.emit("menu-archive-current", ());
+        } else if id == "app:check-updates" {
+            let _ = app_handle.emit("menu-check-updates", ());
         }
     });
 

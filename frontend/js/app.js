@@ -1983,7 +1983,7 @@ Promise.all([fetchSessions(), fetchProjects(), fetchSettings()]).then(() => {
     updateLastUpdateBar();
     // Show startup project cards when no session is selected
     showStartupView();
-    initUpdater();
+    initUpdater({ showToast: (m) => actions.showToast(m) });
 });
 // Auto-refresh every 30s to detect updated sessions
 function updateLastUpdateBar() {
