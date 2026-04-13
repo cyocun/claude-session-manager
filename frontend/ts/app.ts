@@ -19,6 +19,7 @@ import { renderToolBlocks } from './toolRenderer.js';
 import { createSessionActions } from './sessionActions.js';
 import { initKeyboardNavigation, initResizeHandle, initTerminalResizeHandle } from './layoutControls.js';
 import { initShortcuts } from './shortcuts.js';
+import { initUpdater } from './updater.js';
 import type { DetailMessage, ProjectGroup, ProjectInfo, ServerSettings, SessionDetail, SessionSummary } from './types.js';
 import { hasSessionIdentityOrderChanged, patchSessionListItems } from './sessionListView.js';
 import { ICONS } from './icons.js';
@@ -2148,6 +2149,7 @@ Promise.all([fetchSessions(), fetchProjects(), fetchSettings()]).then(() => {
   updateLastUpdateBar();
   // Show startup project cards when no session is selected
   showStartupView();
+  initUpdater();
 });
 
 // Auto-refresh every 30s to detect updated sessions

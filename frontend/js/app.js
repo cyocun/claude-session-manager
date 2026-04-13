@@ -10,6 +10,7 @@ import { renderToolBlocks } from './toolRenderer.js';
 import { createSessionActions } from './sessionActions.js';
 import { initKeyboardNavigation, initResizeHandle, initTerminalResizeHandle } from './layoutControls.js';
 import { initShortcuts } from './shortcuts.js';
+import { initUpdater } from './updater.js';
 import { hasSessionIdentityOrderChanged, patchSessionListItems } from './sessionListView.js';
 import { ICONS } from './icons.js';
 import { openTerminal, closeTerminal, isTerminalOpen, updateTerminalTheme, getStoredHeight, setStoredHeight, } from './terminal.js';
@@ -1982,6 +1983,7 @@ Promise.all([fetchSessions(), fetchProjects(), fetchSettings()]).then(() => {
     updateLastUpdateBar();
     // Show startup project cards when no session is selected
     showStartupView();
+    initUpdater();
 });
 // Auto-refresh every 30s to detect updated sessions
 function updateLastUpdateBar() {

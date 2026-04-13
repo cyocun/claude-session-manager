@@ -6,7 +6,9 @@ mod menu;
 mod models;
 mod tray;
 
-use commands::{archive, clipboard, projects, pty, resume, search as search_cmd, sessions, settings};
+use commands::{
+    archive, clipboard, projects, pty, resume, search as search_cmd, sessions, settings, updater,
+};
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
@@ -51,6 +53,7 @@ fn main() {
     }
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             sessions::list_sessions,
             sessions::get_session_detail,
@@ -81,6 +84,8 @@ fn main() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_close,
+            updater::check_for_update,
+            updater::install_update_and_restart,
             sync_menu_state,
         ])
         .setup(|app| {
