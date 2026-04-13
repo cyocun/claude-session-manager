@@ -6,9 +6,11 @@ let previewTimer = null;
 let previewSessionId = null;
 let previewAnchorRect = null;
 const PREVIEW_CACHE_MAX = 200;
-// Activation state: first hover needs 500ms, then instant until idle 1s outside list
-let previewActivated = false;
-let deactivateTimer = null;
+// Hotkey state: holding Option (Alt) unlocks hover-preview everywhere.
+let hotkeyPressed = false;
+export function isPreviewHotkeyPressed() {
+    return hotkeyPressed;
+}
 function trimPreviewCache() {
     const keys = Object.keys(previewCache);
     const overflow = keys.length - PREVIEW_CACHE_MAX;
@@ -22,12 +24,6 @@ function clearTimer() {
     if (previewTimer !== null) {
         clearTimeout(previewTimer);
         previewTimer = null;
-    }
-}
-function clearDeactivateTimer() {
-    if (deactivateTimer !== null) {
-        clearTimeout(deactivateTimer);
-        deactivateTimer = null;
     }
 }
 function positionPreview() {
@@ -117,35 +113,27 @@ export function invalidatePreviewCache(sessionIds) {
 }
 export function schedulePreviewShow(sessionId, anchorRect) {
     clearTimer();
-    clearDeactivateTimer();
-    const delay = previewActivated ? 0 : 500;
-    previewTimer = setTimeout(() => {
-        previewActivated = true;
-        showPreview(sessionId, anchorRect);
-    }, delay);
+    showPreview(sessionId, anchorRect);
 }
 export function schedulePreviewHide() {
     clearTimer();
     previewTimer = setTimeout(hidePreview, 200);
-    // Start deactivation timer: if no session hovered for 1s, reset to initial state
-    clearDeactivateTimer();
-    deactivateTimer = setTimeout(() => {
-        previewActivated = false;
-    }, 1000);
 }
 export function initPreview() {
     previewEl = document.createElement('div');
     previewEl.className = 'session-preview hidden';
-    previewEl.addEventListener('mouseenter', () => {
-        clearTimer();
-        clearDeactivateTimer();
-    });
+    previewEl.addEventListener('mouseenter', clearTimer);
     previewEl.addEventListener('mouseleave', () => {
         previewTimer = setTimeout(hidePreview, 200);
-        clearDeactivateTimer();
-        deactivateTimer = setTimeout(() => {
-            previewActivated = false;
-        }, 1000);
     });
     document.body.appendChild(previewEl);
+    document.addEventListener('keydown', (e) => {
+        hotkeyPressed = e.altKey;
+    });
+    document.addEventListener('keyup', (e) => {
+        const wasPressed = hotkeyPressed;
+        hotkeyPressed = e.altKey;
+        if (wasPressed && !hotkeyPressed)
+            hidePreview();
+    });
 }

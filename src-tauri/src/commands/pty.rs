@@ -16,14 +16,6 @@ impl PtyState {
             sessions: Mutex::new(HashMap::new()),
         }
     }
-
-    /// Kill all remaining PTY sessions (called on app exit).
-    pub fn cleanup(&self) {
-        let mut sessions = self.sessions.lock().unwrap();
-        for (_, mut session) in sessions.drain() {
-            let _ = session.child.kill();
-        }
-    }
 }
 
 struct PtySession {
@@ -67,21 +59,14 @@ fn spawn_pty_inner(
     cmd.args(["-c", shell_command]);
     cmd.cwd(working_dir);
 
-    // Inherit common environment variables
-    for key in &[
-        "HOME",
-        "PATH",
-        "USER",
-        "LANG",
-        "SHELL",
-        "CLAUDE_DATA_DIR",
-    ] {
-        if let Ok(val) = std::env::var(key) {
-            cmd.env(key, val);
-        }
+    // Inherit full environment, then override terminal-related vars
+    for (key, val) in std::env::vars() {
+        cmd.env(key, val);
     }
-    // Set TERM for proper color/escape support
     cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+    // Disable no-flicker mode in embedded terminal (it interferes with line input)
+    cmd.env("CLAUDE_CODE_NO_FLICKER", "0");
 
     let child = pair
         .slave

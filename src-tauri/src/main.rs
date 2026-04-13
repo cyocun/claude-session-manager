@@ -4,7 +4,6 @@
 mod commands;
 mod menu;
 mod models;
-mod search;
 mod tray;
 
 use commands::{archive, clipboard, projects, pty, resume, search as search_cmd, sessions, settings};

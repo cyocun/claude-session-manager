@@ -8,6 +8,7 @@ import {
   hidePreview,
   initPreview,
   invalidatePreviewCache,
+  isPreviewHotkeyPressed,
   schedulePreviewHide,
   schedulePreviewShow,
   setPreviewDetailCached,
@@ -17,6 +18,7 @@ import { createFullTextSearchController } from './fullTextSearch.js';
 import { renderToolBlocks } from './toolRenderer.js';
 import { createSessionActions } from './sessionActions.js';
 import { initKeyboardNavigation, initResizeHandle, initTerminalResizeHandle } from './layoutControls.js';
+import { initShortcuts } from './shortcuts.js';
 import type { DetailMessage, ProjectGroup, ProjectInfo, ServerSettings, SessionDetail, SessionSummary } from './types.js';
 import { hasSessionIdentityOrderChanged, patchSessionListItems } from './sessionListView.js';
 import { ICONS } from './icons.js';
@@ -114,10 +116,7 @@ function applyI18n() {
   byId<HTMLInputElement>('search').placeholder = t('searchContent');
   const cs = byIdOptional<HTMLInputElement>('chatSearch');
   if (cs) cs.placeholder = t('chatSearchPlaceholder');
-  byId('homeBtn').title = t('home');
   byId('newSessionBtn').title = t('newSession');
-  const tokenBtn = byId('tokenDashboardBtn') as HTMLButtonElement | null;
-  if (tokenBtn) tokenBtn.title = t('tokenDashboard');
 }
 
 // --- Theme ---
@@ -157,7 +156,6 @@ let isFirstLoad = true;
 let allMessagesRendered = true;
 let renderAbort: { aborted: boolean } | null = null;
 let tokenModal: HTMLElement | null = null;
-let isPreviewHotkeyPressed = false;
 let activeSessionItemEl: HTMLElement | null = null;
 let renderSessionsQueued = false;
 // Search controllers are pure modules; app.ts wires them to current state/getters.
@@ -172,6 +170,8 @@ const fullTextSearch = createFullTextSearchController({
   getLang: () => lang,
   getSessions: () => sessions,
   getSelectedProject: () => selectedProject,
+  setProjectFilter: (path: string | null) => setProjectFilter(path),
+  resolveProjectPath: (name: string) => resolveProjectPath(name),
   projectDisplayName,
   invoke,
   renderSessions,
@@ -249,6 +249,50 @@ async function fetchSettings() {
 function projectDisplayName(path: string): string {
   return projectNameMap[path] || shortPath(path).split('/').pop() || shortPath(path);
 }
+
+function resolveProjectPath(displayName: string): string | null {
+  const target = displayName.toLocaleLowerCase();
+  const match = sessions.find(
+    (s) => projectDisplayName(s.project).toLocaleLowerCase() === target
+  );
+  return match ? match.project : null;
+}
+
+function setProjectFilter(path: string | null): void {
+  if (selectedProject === path) return;
+  selectedProject = path;
+  renderProjectFilterChip();
+  requestRenderSessions();
+  void fullTextSearch.perform((byId('search') as HTMLInputElement).value);
+}
+
+function renderProjectFilterChip(): void {
+  const bar = byId('searchChipBar');
+  if (!selectedProject) {
+    bar.style.display = 'none';
+    bar.replaceChildren();
+    return;
+  }
+  const chip = createEl('span', { className: 'search-chip', title: shortPath(selectedProject) });
+  const label = createEl('span', {
+    className: 'search-chip-label truncate',
+    textContent: projectDisplayName(selectedProject),
+  });
+  const close = createEl('button', {
+    className: 'search-chip-close',
+    textContent: '\u00D7',
+    title: t('clear') || 'Clear',
+    onClick: (e: Event) => {
+      e.stopPropagation();
+      setProjectFilter(null);
+    },
+  });
+  chip.appendChild(label);
+  chip.appendChild(close);
+  bar.replaceChildren(chip);
+  bar.style.display = 'block';
+}
+
 function isRemote() {
   return isRemoteHost(location.hostname);
 }
@@ -1376,7 +1420,7 @@ function renderSessionItem(s: SessionSummary): HTMLElement {
 
   item.addEventListener('mouseenter', () => {
     if (!item.classList.contains('session-item-active')) item.style.background = 'var(--item-hover)';
-    if (!item.classList.contains('session-item-active') && (isDetailPaneVisible() || isPreviewHotkeyPressed)) {
+    if (!item.classList.contains('session-item-active') && isPreviewHotkeyPressed()) {
       schedulePreviewShow(s.sessionId, item.getBoundingClientRect());
     }
   });
@@ -1488,9 +1532,19 @@ function renderProjectGroup(g: ProjectGroup, groups: ProjectGroup[]): HTMLElemen
       else setTimeout(() => fetchSessions(byId<HTMLInputElement>('showArchived').checked), 2000);
     }
   });
+  const filterBtn = createEl('button', {
+    className: 'project-filter-btn',
+    title: t('filterInProject') || 'Filter search to this project',
+    onClick: (e: Event) => {
+      e.stopPropagation();
+      setProjectFilter(selectedProject === g.path ? null : g.path);
+    },
+  });
+  filterBtn.innerHTML = ICONS.search;
+  if (selectedProject === g.path) filterBtn.classList.add('active');
   const icon = createEl('span', { className: 'project-group-icon' });
   icon.innerHTML = ICONS.folder; // static SVG from icons.ts
-  const header = createEl('div', { className: 'project-group-header' }, [chevron, icon, name, startBtn, count]);
+  const header = createEl('div', { className: 'project-group-header' }, [chevron, icon, name, filterBtn, startBtn, count]);
   if (projectNameMap[g.path]) header.title = shortPath(g.path);
 
   const now = Date.now();
@@ -1700,7 +1754,10 @@ function renderDetailFooter(sessionId: string): void {
       } else {
         showTerminalPane();
         const container = byId('terminalContainer');
-        await openTerminal(sessionId, container);
+        await openTerminal(sessionId, container, () => {
+          hideTerminalPane();
+          renderDetailFooter(sessionId);
+        });
         renderDetailFooter(sessionId);
       }
     },
@@ -1776,21 +1833,19 @@ let activeDetailState: {
   chatContainer: HTMLElement;
   messagesEl: HTMLElement;
 } | null = null;
-let detailRefreshTimer: ReturnType<typeof setInterval> | null = null;
+let detailRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
 function stopDetailRefresh(): void {
   if (detailRefreshTimer !== null) {
-    clearInterval(detailRefreshTimer);
+    clearTimeout(detailRefreshTimer);
     detailRefreshTimer = null;
   }
   activeDetailState = null;
 }
 
-function startDetailRefresh(sessionId: string, messageCount: number, globalResultMap: Record<string, any>, chatContainer: HTMLElement, messagesEl: HTMLElement): void {
-  stopDetailRefresh();
-  activeDetailState = { sessionId, messageCount, globalResultMap, chatContainer, messagesEl };
-
-  detailRefreshTimer = setInterval(async () => {
+function scheduleDetailRefresh(): void {
+  const interval = isTerminalOpen() ? 2000 : 5000;
+  detailRefreshTimer = setTimeout(async () => {
     const state = activeDetailState;
     if (!state || state.sessionId !== selectedSession) {
       stopDetailRefresh();
@@ -1801,9 +1856,13 @@ function startDetailRefresh(sessionId: string, messageCount: number, globalResul
     try {
       detail = await fetchDetail(state.sessionId);
     } catch {
+      scheduleDetailRefresh();
       return;
     }
-    if (!detail || detail.messages.length <= state.messageCount) return;
+    if (!detail || detail.messages.length <= state.messageCount) {
+      scheduleDetailRefresh();
+      return;
+    }
 
     // Update cache
     setPreviewDetailCached(state.sessionId, detail);
@@ -1835,7 +1894,15 @@ function startDetailRefresh(sessionId: string, messageCount: number, globalResul
     if (wasAtBottom) {
       requestAnimationFrame(() => { state.messagesEl.scrollTop = state.messagesEl.scrollHeight; });
     }
-  }, 5000);
+
+    scheduleDetailRefresh();
+  }, interval);
+}
+
+function startDetailRefresh(sessionId: string, messageCount: number, globalResultMap: Record<string, any>, chatContainer: HTMLElement, messagesEl: HTMLElement): void {
+  stopDetailRefresh();
+  activeDetailState = { sessionId, messageCount, globalResultMap, chatContainer, messagesEl };
+  scheduleDetailRefresh();
 }
 
 function renderDetailMessages(detail: SessionDetail, messagesEl: HTMLElement): void {
@@ -1948,41 +2015,53 @@ async function showDetail(sessionId: string) {
 initResizeHandle(byId);
 initTerminalResizeHandle(byId, setStoredHeight);
 
-// Ctrl+` (or Cmd+`) to toggle terminal
-document.addEventListener('keydown', (e: KeyboardEvent) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === '`') {
-    e.preventDefault();
-    if (!selectedSession) return;
-    if (isTerminalOpen()) {
-      closeTerminal().then(() => {
-        hideTerminalPane();
-        renderDetailFooter(selectedSession!);
-      });
-    } else {
-      showTerminalPane();
-      const container = byId('terminalContainer');
-      openTerminal(selectedSession, container).then(() => {
-        renderDetailFooter(selectedSession!);
-      });
-    }
+function toggleTerminalForSelected(): void {
+  if (!selectedSession) return;
+  if (isTerminalOpen()) {
+    closeTerminal().then(() => {
+      hideTerminalPane();
+      renderDetailFooter(selectedSession!);
+    });
+  } else {
+    showTerminalPane();
+    const container = byId('terminalContainer');
+    openTerminal(selectedSession, container, () => {
+      hideTerminalPane();
+      renderDetailFooter(selectedSession!);
+    }).then(() => {
+      renderDetailFooter(selectedSession!);
+    });
   }
-});
+}
+
+async function newSessionAction(): Promise<void> {
+  const result = await invoke('start_new_session');
+  if (result && !result.ok) actions.showToast(t('toastError') + (result.error || ''));
+  else setTimeout(() => fetchSessions(byId<HTMLInputElement>('showArchived').checked), 2000);
+}
+
+async function refreshSessionsAction(): Promise<void> {
+  await fetchSessions(byId<HTMLInputElement>('showArchived').checked);
+}
+
+async function archiveCurrentSessionAction(): Promise<void> {
+  if (!selectedSession) return;
+  await actions.archiveSingle(selectedSession);
+}
+
+function focusSessionByIndex(idx: number): void {
+  const items = Array.from(document.querySelectorAll('.session-item')) as HTMLElement[];
+  if (items.length === 0) return;
+  const target = items[idx < 0 ? items.length - 1 : Math.min(idx, items.length - 1)];
+  target.click();
+  target.scrollIntoView({ block: 'nearest' });
+}
 
 // --- Init ---
 
 fullTextSearch.bindInputEvents(byId<HTMLInputElement>('search'), byId('searchClearBtn'));
-byId('homeBtn').addEventListener('click', () => {
-  showStartupView();
-});
-byId('tokenDashboardBtn').addEventListener('click', () => {
-  void openTokenModal();
-});
 byId('archiveSelectedBtn').addEventListener('click', () => actions.archiveSelected());
-byId('newSessionBtn').addEventListener('click', async () => {
-  const result = await invoke('start_new_session');
-  if (result && !result.ok) actions.showToast(t('toastError') + (result.error || ''));
-  else setTimeout(() => fetchSessions(byId<HTMLInputElement>('showArchived').checked), 2000);
-});
+byId('newSessionBtn').addEventListener('click', () => { void newSessionAction(); });
 
 // Native menu events are emitted by Tauri and reflected into in-app state.
 if (isTauri && tauriWindow.event) {
@@ -2012,6 +2091,11 @@ if (isTauri && tauriWindow.event) {
     else { zoomLevel = 100; }
     localStorage.setItem('csm-zoom', String(zoomLevel)); applyZoom();
   });
+  listen('menu-home', () => { showStartupView(); });
+  listen('menu-token-dashboard', () => { void openTokenModal(); });
+  listen('menu-new-session', () => { void newSessionAction(); });
+  listen('menu-reload', () => { void refreshSessionsAction(); });
+  listen('menu-archive-current', () => { void archiveCurrentSessionAction(); });
 }
 
 // --- Zoom ---
@@ -2030,73 +2114,20 @@ applyI18n();
 initPreview();
 applyZoom();
 
-function focusInputAndSelect(el: HTMLInputElement | null): void {
-  if (!el) return;
-  el.focus();
-  el.select();
-}
-
-function clearGlobalSearch(): void {
-  fullTextSearch.clear();
-}
-
-function clearChatSearch(): void {
-  chatSearch.clear();
-}
-
-document.addEventListener('keydown', (e: KeyboardEvent) => {
-  const active = document.activeElement as HTMLElement | null;
-  const activeTag = active?.tagName;
-  const activeIsTextInput = activeTag === 'INPUT' || activeTag === 'TEXTAREA';
-  const chatInput = byIdOptional<HTMLInputElement>('chatSearch');
-  const globalSearch = byId<HTMLInputElement>('search');
-
-  if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'f') {
-    e.preventDefault();
-    focusInputAndSelect(globalSearch);
-    return;
-  }
-  if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'f') {
-    e.preventDefault();
-    focusInputAndSelect(selectedSession && chatInput ? chatInput : globalSearch);
-    return;
-  }
-  if (e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'k') {
-    e.preventDefault();
-    focusInputAndSelect(globalSearch);
-    return;
-  }
-  if (e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'g') {
-    if (!chatInput) return;
-    e.preventDefault();
-    if (e.shiftKey) chatSearch.prev();
-    else chatSearch.next();
-    return;
-  }
-  if (e.key === 'Escape' && activeIsTextInput) {
-    if (active === chatInput) {
-      clearChatSearch();
-      (active as HTMLInputElement).blur();
-      return;
-    }
-    if (active === globalSearch) {
-      clearGlobalSearch();
-      (active as HTMLInputElement).blur();
-      return;
-    }
-  }
-
-  isPreviewHotkeyPressed = e.altKey && e.shiftKey;
+initShortcuts({
+  byId,
+  byIdOptional,
+  fullTextSearch,
+  chatSearch,
+  getSelectedSession: () => selectedSession,
+  getSelectedProject: () => selectedProject,
+  setProjectFilter,
+  toggleTerminal: toggleTerminalForSelected,
+  focusFirstSession: () => focusSessionByIndex(0),
+  focusLastSession: () => focusSessionByIndex(-1),
+  isModalOpen: () => tokenModal !== null,
 });
-document.addEventListener('keyup', (e: KeyboardEvent) => {
-  if (e.key === 'Alt' || e.key === 'Shift') {
-    isPreviewHotkeyPressed = e.altKey && e.shiftKey;
-    if (!isPreviewHotkeyPressed && !isDetailPaneVisible()) hidePreview();
-  } else if (!e.altKey || !e.shiftKey) {
-    isPreviewHotkeyPressed = false;
-    if (!isDetailPaneVisible()) hidePreview();
-  }
-});
+
 
 Promise.all([fetchSessions(), fetchProjects(), fetchSettings()]).then(() => {
   // Sync menu state with saved preferences

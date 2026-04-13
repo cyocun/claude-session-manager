@@ -8,9 +8,12 @@ let previewSessionId: string | null = null;
 let previewAnchorRect: DOMRect | null = null;
 const PREVIEW_CACHE_MAX = 200;
 
-// Activation state: first hover needs 500ms, then instant until idle 1s outside list
-let previewActivated = false;
-let deactivateTimer: ReturnType<typeof setTimeout> | null = null;
+// Hotkey state: holding Option (Alt) unlocks hover-preview everywhere.
+let hotkeyPressed = false;
+
+export function isPreviewHotkeyPressed(): boolean {
+  return hotkeyPressed;
+}
 
 function trimPreviewCache(): void {
   const keys = Object.keys(previewCache);
@@ -25,13 +28,6 @@ function clearTimer(): void {
   if (previewTimer !== null) {
     clearTimeout(previewTimer);
     previewTimer = null;
-  }
-}
-
-function clearDeactivateTimer(): void {
-  if (deactivateTimer !== null) {
-    clearTimeout(deactivateTimer);
-    deactivateTimer = null;
   }
 }
 
@@ -128,37 +124,29 @@ export function invalidatePreviewCache(sessionIds: string[]): void {
 
 export function schedulePreviewShow(sessionId: string, anchorRect: DOMRect): void {
   clearTimer();
-  clearDeactivateTimer();
-  const delay = previewActivated ? 0 : 500;
-  previewTimer = setTimeout(() => {
-    previewActivated = true;
-    showPreview(sessionId, anchorRect);
-  }, delay);
+  showPreview(sessionId, anchorRect);
 }
 
 export function schedulePreviewHide(): void {
   clearTimer();
   previewTimer = setTimeout(hidePreview, 200);
-  // Start deactivation timer: if no session hovered for 1s, reset to initial state
-  clearDeactivateTimer();
-  deactivateTimer = setTimeout(() => {
-    previewActivated = false;
-  }, 1000);
 }
 
 export function initPreview(): void {
   previewEl = document.createElement('div');
   previewEl.className = 'session-preview hidden';
-  previewEl.addEventListener('mouseenter', () => {
-    clearTimer();
-    clearDeactivateTimer();
-  });
+  previewEl.addEventListener('mouseenter', clearTimer);
   previewEl.addEventListener('mouseleave', () => {
     previewTimer = setTimeout(hidePreview, 200);
-    clearDeactivateTimer();
-    deactivateTimer = setTimeout(() => {
-      previewActivated = false;
-    }, 1000);
   });
   document.body.appendChild(previewEl);
+
+  document.addEventListener('keydown', (e: KeyboardEvent) => {
+    hotkeyPressed = e.altKey;
+  });
+  document.addEventListener('keyup', (e: KeyboardEvent) => {
+    const wasPressed = hotkeyPressed;
+    hotkeyPressed = e.altKey;
+    if (wasPressed && !hotkeyPressed) hidePreview();
+  });
 }

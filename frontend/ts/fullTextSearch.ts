@@ -1,4 +1,4 @@
-import { normalizeSearchQuery } from './searchUtils.js';
+import { normalizeSearchQuery, parseSearchQuery } from './searchUtils.js';
 import { renderSearchResults, renderLoading, type SearchResultRendererDeps } from './searchResultRenderer.js';
 import type { SearchHit, SearchMode } from './types.js';
 
@@ -8,6 +8,8 @@ export type FullTextSearchDeps = {
   getLang: () => string;
   getSessions: () => Array<{ sessionId: string; firstDisplay: string }>;
   getSelectedProject: () => string | null;
+  setProjectFilter: (path: string | null) => void;
+  resolveProjectPath: (displayName: string) => string | null;
   projectDisplayName: (path: string) => string;
   invoke: (cmd: string, args?: Record<string, unknown>) => Promise<any>;
   renderSessions: () => void;
@@ -23,6 +25,8 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     getLang,
     getSessions,
     getSelectedProject,
+    setProjectFilter,
+    resolveProjectPath,
     projectDisplayName,
     invoke,
     renderSessions,
@@ -67,6 +71,18 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
 
   function onSearchInput(): void {
     const search = byId('search') as HTMLInputElement;
+    const parsed = parseSearchQuery(search.value);
+    if (parsed.project !== null) {
+      const resolved = resolveProjectPath(parsed.project);
+      if (resolved) {
+        search.value = parsed.query;
+        const clearBtn = byId('searchClearBtn');
+        if (clearBtn) clearBtn.style.display = search.value ? 'flex' : 'none';
+        if (fulltextSearchTimer) clearTimeout(fulltextSearchTimer);
+        setProjectFilter(resolved);
+        return;
+      }
+    }
     if (fulltextSearchTimer) clearTimeout(fulltextSearchTimer);
     fulltextSearchTimer = setTimeout(() => {
       void perform(search.value);

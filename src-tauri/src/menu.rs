@@ -99,12 +99,30 @@ pub fn setup_menu(app: &AppHandle) -> tauri::Result<()> {
         .quit()
         .build()?;
 
+    // File menu (new session, reload, archive)
+    let new_session = tauri::menu::MenuItemBuilder::with_id("file:new-session", "New Session")
+        .accelerator("CmdOrCtrl+N").build(app)?;
+    let reload_sessions = tauri::menu::MenuItemBuilder::with_id("file:reload", "Reload")
+        .accelerator("CmdOrCtrl+R").build(app)?;
+    let archive_current = tauri::menu::MenuItemBuilder::with_id("file:archive-current", "Archive Current Session")
+        .accelerator("CmdOrCtrl+Backspace").build(app)?;
+    let file_sub = SubmenuBuilder::with_id(app, "file_sub", "File")
+        .item(&new_session)
+        .item(&reload_sessions)
+        .separator()
+        .item(&archive_current)
+        .build()?;
+
     // Edit menu (for copy/paste support)
     let edit_sub = SubmenuBuilder::with_id(app, "edit_sub", "Edit")
         .undo().redo().separator().cut().copy().paste().select_all()
         .build()?;
 
-    // View menu (zoom)
+    // View menu (home, dashboard, zoom)
+    let go_home = tauri::menu::MenuItemBuilder::with_id("go:home", "Home")
+        .accelerator("CmdOrCtrl+Shift+H").build(app)?;
+    let go_token_dashboard = tauri::menu::MenuItemBuilder::with_id("go:token-dashboard", "Token Dashboard")
+        .accelerator("CmdOrCtrl+Shift+T").build(app)?;
     let zoom_in = tauri::menu::MenuItemBuilder::with_id("zoom:in", "Zoom In")
         .accelerator("CmdOrCtrl+=").build(app)?;
     let zoom_out = tauri::menu::MenuItemBuilder::with_id("zoom:out", "Zoom Out")
@@ -112,6 +130,8 @@ pub fn setup_menu(app: &AppHandle) -> tauri::Result<()> {
     let zoom_reset = tauri::menu::MenuItemBuilder::with_id("zoom:reset", "Actual Size")
         .accelerator("CmdOrCtrl+0").build(app)?;
     let view_sub = SubmenuBuilder::with_id(app, "view_sub", "View")
+        .item(&go_home).item(&go_token_dashboard)
+        .separator()
         .item(&zoom_in).item(&zoom_out).item(&zoom_reset)
         .build()?;
 
@@ -121,7 +141,7 @@ pub fn setup_menu(app: &AppHandle) -> tauri::Result<()> {
         .build()?;
 
     let menu = MenuBuilder::new(app)
-        .item(&app_sub).item(&edit_sub).item(&view_sub).item(&window_sub)
+        .item(&app_sub).item(&file_sub).item(&edit_sub).item(&view_sub).item(&window_sub)
         .build()?;
 
     app.set_menu(menu)?;
@@ -157,6 +177,16 @@ pub fn setup_menu(app: &AppHandle) -> tauri::Result<()> {
         } else if id.starts_with("zoom:") {
             let action = id.strip_prefix("zoom:").unwrap_or("reset").to_string();
             let _ = app_handle.emit("menu-zoom", &action);
+        } else if id == "go:home" {
+            let _ = app_handle.emit("menu-home", ());
+        } else if id == "go:token-dashboard" {
+            let _ = app_handle.emit("menu-token-dashboard", ());
+        } else if id == "file:new-session" {
+            let _ = app_handle.emit("menu-new-session", ());
+        } else if id == "file:reload" {
+            let _ = app_handle.emit("menu-reload", ());
+        } else if id == "file:archive-current" {
+            let _ = app_handle.emit("menu-archive-current", ());
         }
     });
 

@@ -5,6 +5,21 @@ export function normalizeSearchQuery(query: string): string {
     .trim();
 }
 
+export interface ParsedSearchQuery {
+  project: string | null;
+  query: string;
+}
+
+const PROJECT_FILTER_RE = /(?:^|\s)project:(?:"([^"]*)"|(\S+))/;
+
+export function parseSearchQuery(input: string): ParsedSearchQuery {
+  const m = input.match(PROJECT_FILTER_RE);
+  if (!m) return { project: null, query: input };
+  const project = (m[1] ?? m[2] ?? '').trim() || null;
+  const rest = input.replace(PROJECT_FILTER_RE, ' ').replace(/\s+/g, ' ').trim();
+  return { project, query: rest };
+}
+
 export function getSearchVariants(query: string): string[] {
   const trimmed = query.trim();
   if (!trimmed) return [];

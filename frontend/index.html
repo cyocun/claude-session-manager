@@ -43,23 +43,19 @@
     <!-- Titlebar drag area -->
     <div data-tauri-drag-region class="titlebar-drag" style="height:38px;"></div>
     <!-- Search + new button -->
-    <div class="px-3 pb-2" style="display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;">
+    <div class="px-3 pb-2" style="display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;">
       <div style="position:relative;min-width:0;">
         <input id="search" type="text" class="mac-input px-3" spellcheck="false" autocorrect="off" autocapitalize="off" autocomplete="off" style="height:28px;min-width:0;width:100%;padding-right:24px;">
         <button id="searchClearBtn" class="search-clear-btn" style="display:none;" type="button">&times;</button>
       </div>
-      <button id="homeBtn" class="mac-btn" style="width:28px;height:28px;padding:0;" title="Home">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l-2 0l9 -9l9 9l-2 0"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7"/><path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6"/></svg>
-      </button>
-      <button id="tokenDashboardBtn" class="mac-btn" style="width:28px;height:28px;padding:0;" title="Token Dashboard">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -6"/><path d="M15 9a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -10"/><path d="M9 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -14"/><path d="M4 20h14"/></svg>
-      </button>
       <button id="newSessionBtn" class="mac-btn" style="width:28px;height:28px;padding:0;" title="New Session">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>
       </button>
       <button id="archiveSelectedBtn" class="invisible mac-btn text-xs w-full" style="font-size:11px;grid-column:1/-1;">
         <span data-i18n="archiveSelected"></span>
       </button>
+      <!-- Project filter chip (shown when a project filter is active). -->
+      <div id="searchChipBar" style="display:none;grid-column:1/-1;"></div>
     </div>
     <!-- Session list mount point (fully rendered by app.ts). -->
     <div class="overflow-y-auto scrollbar-thin px-2 pb-3" style="min-height:0;">

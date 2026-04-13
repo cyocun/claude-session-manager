@@ -1,4 +1,4 @@
-pub use csm_core::sessions::{archive_path, claude_dir, find_session_file, history_file};
+pub use csm_core::sessions::{archive_path, claude_dir};
 
 #[tauri::command]
 pub fn list_sessions(include_archived: bool) -> Vec<csm_core::models::SessionSummary> {

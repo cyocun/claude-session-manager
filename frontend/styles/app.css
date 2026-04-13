@@ -6,6 +6,15 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
     .fade-in { animation: fadeIn 0.15s ease-in; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
+    #toast { display: inline-flex; align-items: center; gap: 12px; }
+    #toast.hidden { display: none; }
+    .toast-action {
+      padding: 2px 8px; border-radius: 4px; border: none; background: transparent;
+      color: var(--accent, #3b82f6); font-weight: 500; font-size: inherit;
+      cursor: default; line-height: inherit;
+    }
+    .toast-action:hover { background: var(--item-hover); }
+
     /* Titlebar drag region */
     .titlebar-drag { user-select: none; }
 
@@ -288,6 +297,36 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
       transition: background 0.1s;
     }
     .project-start-btn:hover { background: var(--btn2-bg-hover); }
+    .project-filter-btn {
+      width: 20px; height: 20px; padding: 0;
+      border-radius: 4px; border: none; background: transparent;
+      color: var(--text-muted); cursor: default;
+      display: inline-flex; align-items: center; justify-content: center;
+      opacity: 0; transition: opacity 0.1s, background 0.1s, color 0.1s;
+      flex-shrink: 0;
+    }
+    .project-group-header:hover .project-filter-btn { opacity: 1; }
+    .project-filter-btn:hover { background: var(--item-hover); color: var(--text); }
+    .project-filter-btn.active { opacity: 1; color: var(--accent, var(--text)); background: var(--item-hover); }
+    .project-filter-btn svg { width: 12px; height: 12px; }
+    .search-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      max-width: 100%;
+      padding: 2px 4px 2px 8px;
+      border-radius: 999px;
+      background: var(--item-hover); color: var(--text-secondary);
+      font-size: 11px; line-height: 1.4;
+      border: 0.5px solid var(--border);
+    }
+    .search-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .search-chip-close {
+      width: 16px; height: 16px; padding: 0;
+      border: none; background: transparent; color: var(--text-muted);
+      font-size: 13px; line-height: 1; cursor: default;
+      border-radius: 999px; display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .search-chip-close:hover { background: var(--btn2-bg-hover); color: var(--text); }
     .project-group-sessions { display: none; padding-left: 4px; }
     .project-group-sessions.open { display: block; }
     .show-older-pill {

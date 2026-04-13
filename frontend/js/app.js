@@ -3,12 +3,13 @@ import { createEl, getById, setHighlight } from './dom.js';
 import { getThemePref, applyTheme, watchSystemTheme } from './theme.js';
 import { invoke, invokeStrict, isTauri } from './tauri.js';
 import { isRemoteHost, shortPath, timeAgo } from './utils.js';
-import { getPreviewDetailCached, hidePreview, initPreview, invalidatePreviewCache, schedulePreviewHide, schedulePreviewShow, setPreviewDetailCached, } from './preview.js';
+import { getPreviewDetailCached, hidePreview, initPreview, invalidatePreviewCache, isPreviewHotkeyPressed, schedulePreviewHide, schedulePreviewShow, setPreviewDetailCached, } from './preview.js';
 import { createChatSearchController } from './chatSearch.js';
 import { createFullTextSearchController } from './fullTextSearch.js';
 import { renderToolBlocks } from './toolRenderer.js';
 import { createSessionActions } from './sessionActions.js';
 import { initKeyboardNavigation, initResizeHandle, initTerminalResizeHandle } from './layoutControls.js';
+import { initShortcuts } from './shortcuts.js';
 import { hasSessionIdentityOrderChanged, patchSessionListItems } from './sessionListView.js';
 import { ICONS } from './icons.js';
 import { openTerminal, closeTerminal, isTerminalOpen, updateTerminalTheme, getStoredHeight, setStoredHeight, } from './terminal.js';
@@ -30,11 +31,7 @@ function applyI18n() {
     const cs = byIdOptional('chatSearch');
     if (cs)
         cs.placeholder = t('chatSearchPlaceholder');
-    byId('homeBtn').title = t('home');
     byId('newSessionBtn').title = t('newSession');
-    const tokenBtn = byId('tokenDashboardBtn');
-    if (tokenBtn)
-        tokenBtn.title = t('tokenDashboard');
 }
 // --- Theme ---
 let themePref = getThemePref();
@@ -80,7 +77,6 @@ let isFirstLoad = true;
 let allMessagesRendered = true;
 let renderAbort = null;
 let tokenModal = null;
-let isPreviewHotkeyPressed = false;
 let activeSessionItemEl = null;
 let renderSessionsQueued = false;
 // Search controllers are pure modules; app.ts wires them to current state/getters.
@@ -95,6 +91,8 @@ const fullTextSearch = createFullTextSearchController({
     getLang: () => lang,
     getSessions: () => sessions,
     getSelectedProject: () => selectedProject,
+    setProjectFilter: (path) => setProjectFilter(path),
+    resolveProjectPath: (name) => resolveProjectPath(name),
     projectDisplayName,
     invoke,
     renderSessions,
@@ -175,6 +173,45 @@ async function fetchSettings() {
 }
 function projectDisplayName(path) {
     return projectNameMap[path] || shortPath(path).split('/').pop() || shortPath(path);
+}
+function resolveProjectPath(displayName) {
+    const target = displayName.toLocaleLowerCase();
+    const match = sessions.find((s) => projectDisplayName(s.project).toLocaleLowerCase() === target);
+    return match ? match.project : null;
+}
+function setProjectFilter(path) {
+    if (selectedProject === path)
+        return;
+    selectedProject = path;
+    renderProjectFilterChip();
+    requestRenderSessions();
+    void fullTextSearch.perform(byId('search').value);
+}
+function renderProjectFilterChip() {
+    const bar = byId('searchChipBar');
+    if (!selectedProject) {
+        bar.style.display = 'none';
+        bar.replaceChildren();
+        return;
+    }
+    const chip = createEl('span', { className: 'search-chip', title: shortPath(selectedProject) });
+    const label = createEl('span', {
+        className: 'search-chip-label truncate',
+        textContent: projectDisplayName(selectedProject),
+    });
+    const close = createEl('button', {
+        className: 'search-chip-close',
+        textContent: '\u00D7',
+        title: t('clear') || 'Clear',
+        onClick: (e) => {
+            e.stopPropagation();
+            setProjectFilter(null);
+        },
+    });
+    chip.appendChild(label);
+    chip.appendChild(close);
+    bar.replaceChildren(chip);
+    bar.style.display = 'block';
 }
 function isRemote() {
     return isRemoteHost(location.hostname);
@@ -1259,7 +1296,7 @@ function renderSessionItem(s) {
     item.addEventListener('mouseenter', () => {
         if (!item.classList.contains('session-item-active'))
             item.style.background = 'var(--item-hover)';
-        if (!item.classList.contains('session-item-active') && (isDetailPaneVisible() || isPreviewHotkeyPressed)) {
+        if (!item.classList.contains('session-item-active') && isPreviewHotkeyPressed()) {
             schedulePreviewShow(s.sessionId, item.getBoundingClientRect());
         }
     });
@@ -1366,9 +1403,20 @@ function renderProjectGroup(g, groups) {
                 setTimeout(() => fetchSessions(byId('showArchived').checked), 2000);
         }
     });
+    const filterBtn = createEl('button', {
+        className: 'project-filter-btn',
+        title: t('filterInProject') || 'Filter search to this project',
+        onClick: (e) => {
+            e.stopPropagation();
+            setProjectFilter(selectedProject === g.path ? null : g.path);
+        },
+    });
+    filterBtn.innerHTML = ICONS.search;
+    if (selectedProject === g.path)
+        filterBtn.classList.add('active');
     const icon = createEl('span', { className: 'project-group-icon' });
     icon.innerHTML = ICONS.folder; // static SVG from icons.ts
-    const header = createEl('div', { className: 'project-group-header' }, [chevron, icon, name, startBtn, count]);
+    const header = createEl('div', { className: 'project-group-header' }, [chevron, icon, name, filterBtn, startBtn, count]);
     if (projectNameMap[g.path])
         header.title = shortPath(g.path);
     const now = Date.now();
@@ -1516,80 +1564,7 @@ function renderDetailHeader(sessionId, detail, headerEl) {
     const infoRow = createEl('div', {}, [projLine, sep, titleLine]);
     infoRow.style.cssText = 'display:flex;align-items:baseline;gap:6px;min-width:0;overflow:hidden;';
     infoRow.setAttribute('data-tauri-drag-region', '');
-    const chatSearchInput = createEl('input', {
-        type: 'text', id: 'chatSearch',
-        className: 'mac-input',
-        spellcheck: 'false',
-        autocorrect: 'off',
-        autocapitalize: 'off',
-        autocomplete: 'off',
-    });
-    chatSearchInput.style.cssText = 'width:100%;height:28px;padding:4px 60px 4px 8px;box-sizing:border-box;';
-    chatSearchInput.placeholder = t('chatSearchPlaceholder');
-    const chatCount = createEl('span', { id: 'chatSearchCount', className: 'text-[10px]' });
-    chatCount.style.cssText = 'color:var(--text-faint);white-space:nowrap;';
-    const prevBtn = createEl('button', { id: 'chatSearchPrev', className: 'hidden', textContent: '\u25B2' });
-    prevBtn.style.cssText = 'font-size:9px;color:var(--text-muted);padding:0 2px;line-height:1;cursor:default;background:none;border:none;pointer-events:auto;';
-    const nextBtn = createEl('button', { id: 'chatSearchNext', className: 'hidden', textContent: '\u25BC' });
-    nextBtn.style.cssText = 'font-size:9px;color:var(--text-muted);padding:0 2px;line-height:1;cursor:default;background:none;border:none;pointer-events:auto;';
-    const chatClearBtn = createEl('button', { id: 'chatSearchClear', textContent: '\u00D7' });
-    chatClearBtn.style.cssText = 'font-size:13px;color:var(--text-muted);padding:0 2px;line-height:1;cursor:default;background:none;border:none;pointer-events:auto;display:none;';
-    const searchOverlay = createEl('div', {}, [chatCount, prevBtn, nextBtn, chatClearBtn]);
-    searchOverlay.style.cssText = 'display:grid;grid-auto-flow:column;grid-auto-columns:max-content;align-items:center;gap:2px;position:absolute;right:6px;top:50%;transform:translateY(-50%);pointer-events:auto;';
-    const searchGroup = createEl('div', {}, [chatSearchInput, searchOverlay]);
-    searchGroup.style.cssText = 'display:grid;position:relative;min-width:0;';
-    // Filter segmented control: All / AI / User (speech bubble icons)
-    function svgEl(tag, attrs, children) {
-        const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
-        for (const [k, v] of Object.entries(attrs))
-            el.setAttribute(k, v);
-        if (children)
-            children.forEach(c => el.appendChild(c));
-        return el;
-    }
-    const bubbleSvgAttrs = { width: '14', height: '14', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' };
-    function bubbleIcon(key) {
-        if (key === 'all') {
-            // Tabler "messages": two overlapping bubbles
-            return svgEl('svg', bubbleSvgAttrs, [
-                svgEl('path', { d: 'M21 14l-3 -3h-7a1 1 0 0 1 -1 -1v-6a1 1 0 0 1 1 -1h9a1 1 0 0 1 1 1v10' }),
-                svgEl('path', { d: 'M14 15v2a1 1 0 0 1 -1 1h-7l-3 3v-10a1 1 0 0 1 1 -1h2' }),
-            ]);
-        }
-        // Tabler "message": single bubble, tail bottom-left
-        const svg = svgEl('svg', bubbleSvgAttrs, [
-            svgEl('path', { d: 'M18 4a3 3 0 0 1 3 3v8a3 3 0 0 1 -3 3h-5l-5 3v-3h-2a3 3 0 0 1 -3 -3v-8a3 3 0 0 1 3 -3h12' }),
-        ]);
-        if (key === 'user')
-            svg.style.transform = 'scaleX(-1)';
-        return svg;
-    }
-    const filters = [
-        { key: 'all', label: t('chatFilterAll') },
-        { key: 'assistant', label: t('chatFilterAI') },
-        { key: 'user', label: t('chatFilterUser') },
-    ];
-    const filterBar = createEl('div', { className: 'mac-segmented' });
-    const filterBtns = [];
-    for (const f of filters) {
-        const btn = createEl('button', {
-            className: 'mac-segmented-btn' + (f.key === chatSearch.getFilter() ? ' active' : ''),
-        });
-        btn.appendChild(bubbleIcon(f.key));
-        btn.title = f.label;
-        btn.style.cssText += 'display:inline-flex;align-items:center;justify-content:center;padding:3px 7px;';
-        btn.addEventListener('click', () => {
-            chatSearch.setFilter(f.key);
-            filterBtns.forEach((b, i) => {
-                b.classList.toggle('active', filters[i].key === f.key);
-            });
-            chatSearch.doSearch();
-        });
-        filterBtns.push(btn);
-        filterBar.appendChild(btn);
-    }
-    const controlsRow = createEl('div', { className: 'min-w-0' }, [filterBar, searchGroup]);
-    controlsRow.style.cssText = 'display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;';
+    const { controlsRow } = chatSearch.createSearchUI(t);
     // Place infoRow inside the titlebar drag area (bottom-aligned) so that
     // controlsRow aligns vertically with the left pane's search row.
     const titlebarDrag = headerEl.previousElementSibling;
@@ -1598,35 +1573,6 @@ function renderDetailHeader(sessionId, detail, headerEl) {
         titlebarDrag.replaceChildren(infoRow);
     }
     headerEl.replaceChildren(controlsRow);
-    let chatSearchTimer;
-    chatSearchInput.addEventListener('input', () => {
-        chatClearBtn.style.display = chatSearchInput.value ? 'block' : 'none';
-        clearTimeout(chatSearchTimer);
-        chatSearchTimer = setTimeout(() => chatSearch.doSearch(), 200);
-    });
-    chatClearBtn.addEventListener('click', () => {
-        chatSearchInput.value = '';
-        chatClearBtn.style.display = 'none';
-        chatSearch.doSearch();
-        chatSearchInput.focus();
-    });
-    nextBtn.addEventListener('click', () => chatSearch.next());
-    prevBtn.addEventListener('click', () => chatSearch.prev());
-    chatSearchInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.shiftKey ? chatSearch.prev() : chatSearch.next();
-            e.preventDefault();
-        }
-        if (e.key === 'Escape') {
-            const target = e.target;
-            if (target) {
-                target.value = '';
-                chatClearBtn.style.display = 'none';
-                chatSearch.doSearch();
-                target.blur();
-            }
-        }
-    });
 }
 function renderDetailFooter(sessionId) {
     const mkBtn = (text, isPrimary, onClick) => {
@@ -1662,7 +1608,10 @@ function renderDetailFooter(sessionId) {
         else {
             showTerminalPane();
             const container = byId('terminalContainer');
-            await openTerminal(sessionId, container);
+            await openTerminal(sessionId, container, () => {
+                hideTerminalPane();
+                renderDetailFooter(sessionId);
+            });
             renderDetailFooter(sessionId);
         }
     });
@@ -1730,15 +1679,14 @@ let activeDetailState = null;
 let detailRefreshTimer = null;
 function stopDetailRefresh() {
     if (detailRefreshTimer !== null) {
-        clearInterval(detailRefreshTimer);
+        clearTimeout(detailRefreshTimer);
         detailRefreshTimer = null;
     }
     activeDetailState = null;
 }
-function startDetailRefresh(sessionId, messageCount, globalResultMap, chatContainer, messagesEl) {
-    stopDetailRefresh();
-    activeDetailState = { sessionId, messageCount, globalResultMap, chatContainer, messagesEl };
-    detailRefreshTimer = setInterval(async () => {
+function scheduleDetailRefresh() {
+    const interval = isTerminalOpen() ? 2000 : 5000;
+    detailRefreshTimer = setTimeout(async () => {
         const state = activeDetailState;
         if (!state || state.sessionId !== selectedSession) {
             stopDetailRefresh();
@@ -1749,10 +1697,13 @@ function startDetailRefresh(sessionId, messageCount, globalResultMap, chatContai
             detail = await fetchDetail(state.sessionId);
         }
         catch {
+            scheduleDetailRefresh();
             return;
         }
-        if (!detail || detail.messages.length <= state.messageCount)
+        if (!detail || detail.messages.length <= state.messageCount) {
+            scheduleDetailRefresh();
             return;
+        }
         // Update cache
         setPreviewDetailCached(state.sessionId, detail);
         // Collect new tool results
@@ -1779,7 +1730,13 @@ function startDetailRefresh(sessionId, messageCount, globalResultMap, chatContai
         if (wasAtBottom) {
             requestAnimationFrame(() => { state.messagesEl.scrollTop = state.messagesEl.scrollHeight; });
         }
-    }, 5000);
+        scheduleDetailRefresh();
+    }, interval);
+}
+function startDetailRefresh(sessionId, messageCount, globalResultMap, chatContainer, messagesEl) {
+    stopDetailRefresh();
+    activeDetailState = { sessionId, messageCount, globalResultMap, chatContainer, messagesEl };
+    scheduleDetailRefresh();
 }
 function renderDetailMessages(detail, messagesEl) {
     stopDetailRefresh();
@@ -1885,52 +1842,53 @@ async function showDetail(sessionId) {
 }
 initResizeHandle(byId);
 initTerminalResizeHandle(byId, setStoredHeight);
-// Ctrl+` (or Cmd+`) to toggle terminal
-document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === '`') {
-        e.preventDefault();
-        if (!selectedSession)
-            return;
-        if (isTerminalOpen()) {
-            closeTerminal().then(() => {
-                hideTerminalPane();
-                renderDetailFooter(selectedSession);
-            });
-        }
-        else {
-            showTerminalPane();
-            const container = byId('terminalContainer');
-            openTerminal(selectedSession, container).then(() => {
-                renderDetailFooter(selectedSession);
-            });
-        }
+function toggleTerminalForSelected() {
+    if (!selectedSession)
+        return;
+    if (isTerminalOpen()) {
+        closeTerminal().then(() => {
+            hideTerminalPane();
+            renderDetailFooter(selectedSession);
+        });
     }
-});
-// --- Init ---
-const searchClearBtn = byId('searchClearBtn');
-byId('search').addEventListener('input', () => {
-    fullTextSearch.onSearchInput();
-    searchClearBtn.style.display = byId('search').value ? 'flex' : 'none';
-});
-searchClearBtn.addEventListener('click', () => {
-    byId('search').value = '';
-    searchClearBtn.style.display = 'none';
-    fullTextSearch.onSearchInput();
-});
-byId('homeBtn').addEventListener('click', () => {
-    showStartupView();
-});
-byId('tokenDashboardBtn').addEventListener('click', () => {
-    void openTokenModal();
-});
-byId('archiveSelectedBtn').addEventListener('click', () => actions.archiveSelected());
-byId('newSessionBtn').addEventListener('click', async () => {
+    else {
+        showTerminalPane();
+        const container = byId('terminalContainer');
+        openTerminal(selectedSession, container, () => {
+            hideTerminalPane();
+            renderDetailFooter(selectedSession);
+        }).then(() => {
+            renderDetailFooter(selectedSession);
+        });
+    }
+}
+async function newSessionAction() {
     const result = await invoke('start_new_session');
     if (result && !result.ok)
         actions.showToast(t('toastError') + (result.error || ''));
     else
         setTimeout(() => fetchSessions(byId('showArchived').checked), 2000);
-});
+}
+async function refreshSessionsAction() {
+    await fetchSessions(byId('showArchived').checked);
+}
+async function archiveCurrentSessionAction() {
+    if (!selectedSession)
+        return;
+    await actions.archiveSingle(selectedSession);
+}
+function focusSessionByIndex(idx) {
+    const items = Array.from(document.querySelectorAll('.session-item'));
+    if (items.length === 0)
+        return;
+    const target = items[idx < 0 ? items.length - 1 : Math.min(idx, items.length - 1)];
+    target.click();
+    target.scrollIntoView({ block: 'nearest' });
+}
+// --- Init ---
+fullTextSearch.bindInputEvents(byId('search'), byId('searchClearBtn'));
+byId('archiveSelectedBtn').addEventListener('click', () => actions.archiveSelected());
+byId('newSessionBtn').addEventListener('click', () => { void newSessionAction(); });
 // Native menu events are emitted by Tauri and reflected into in-app state.
 if (isTauri && tauriWindow.event) {
     const { listen } = tauriWindow.event;
@@ -1950,20 +1908,11 @@ if (isTauri && tauriWindow.event) {
         applyI18n();
         requestRenderSessions();
     });
-    listen('search-index-ready', () => {
-        fullTextSearch.setIndexReady(true);
-        const indicator = byIdOptional('searchIndexIndicator');
-        if (indicator)
-            indicator.remove();
-    });
+    listen('search-index-ready', () => { fullTextSearch.onIndexReady(); });
     // Check if index was already built before listener was registered
     invoke('get_search_index_status').then((status) => {
-        if (status && !status.is_indexing) {
-            fullTextSearch.setIndexReady(true);
-            const indicator = byIdOptional('searchIndexIndicator');
-            if (indicator)
-                indicator.remove();
-        }
+        if (status && !status.is_indexing)
+            fullTextSearch.onIndexReady();
     }).catch(() => { });
     listen('menu-show-archived', (e) => {
         byId('showArchived').checked = e.payload;
@@ -1982,6 +1931,11 @@ if (isTauri && tauriWindow.event) {
         localStorage.setItem('csm-zoom', String(zoomLevel));
         applyZoom();
     });
+    listen('menu-home', () => { showStartupView(); });
+    listen('menu-token-dashboard', () => { void openTokenModal(); });
+    listen('menu-new-session', () => { void newSessionAction(); });
+    listen('menu-reload', () => { void refreshSessionsAction(); });
+    listen('menu-archive-current', () => { void archiveCurrentSessionAction(); });
 }
 // --- Zoom ---
 let zoomLevel = parseFloat(localStorage.getItem('csm-zoom') || '100');
@@ -1996,84 +1950,18 @@ applyTheme(themePref);
 applyI18n();
 initPreview();
 applyZoom();
-function focusInputAndSelect(el) {
-    if (!el)
-        return;
-    el.focus();
-    el.select();
-}
-function clearGlobalSearch() {
-    const search = byId('search');
-    const clearBtn = byId('searchClearBtn');
-    if (!search.value)
-        return;
-    search.value = '';
-    clearBtn.style.display = 'none';
-    fullTextSearch.onSearchInput();
-}
-function clearChatSearch() {
-    const chatInput = byIdOptional('chatSearch');
-    if (!chatInput || !chatInput.value)
-        return;
-    chatInput.value = '';
-    chatSearch.doSearch();
-}
-document.addEventListener('keydown', (e) => {
-    const active = document.activeElement;
-    const activeTag = active?.tagName;
-    const activeIsTextInput = activeTag === 'INPUT' || activeTag === 'TEXTAREA';
-    const chatInput = byIdOptional('chatSearch');
-    const globalSearch = byId('search');
-    if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'f') {
-        e.preventDefault();
-        focusInputAndSelect(globalSearch);
-        return;
-    }
-    if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'f') {
-        e.preventDefault();
-        focusInputAndSelect(selectedSession && chatInput ? chatInput : globalSearch);
-        return;
-    }
-    if (e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        focusInputAndSelect(globalSearch);
-        return;
-    }
-    if (e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'g') {
-        if (!chatInput)
-            return;
-        e.preventDefault();
-        if (e.shiftKey)
-            chatSearch.prev();
-        else
-            chatSearch.next();
-        return;
-    }
-    if (e.key === 'Escape' && activeIsTextInput) {
-        if (active === chatInput) {
-            clearChatSearch();
-            active.blur();
-            return;
-        }
-        if (active === globalSearch) {
-            clearGlobalSearch();
-            active.blur();
-            return;
-        }
-    }
-    isPreviewHotkeyPressed = e.altKey && e.shiftKey;
-});
-document.addEventListener('keyup', (e) => {
-    if (e.key === 'Alt' || e.key === 'Shift') {
-        isPreviewHotkeyPressed = e.altKey && e.shiftKey;
-        if (!isPreviewHotkeyPressed && !isDetailPaneVisible())
-            hidePreview();
-    }
-    else if (!e.altKey || !e.shiftKey) {
-        isPreviewHotkeyPressed = false;
-        if (!isDetailPaneVisible())
-            hidePreview();
-    }
+initShortcuts({
+    byId,
+    byIdOptional,
+    fullTextSearch,
+    chatSearch,
+    getSelectedSession: () => selectedSession,
+    getSelectedProject: () => selectedProject,
+    setProjectFilter,
+    toggleTerminal: toggleTerminalForSelected,
+    focusFirstSession: () => focusSessionByIndex(0),
+    focusLastSession: () => focusSessionByIndex(-1),
+    isModalOpen: () => tokenModal !== null,
 });
 Promise.all([fetchSessions(), fetchProjects(), fetchSettings()]).then(() => {
     // Sync menu state with saved preferences
