@@ -612,6 +612,30 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
     .startup-card-readme-btn { font-size: 11px; padding: 2px 10px; }
     .startup-more-btn { margin-top: 8px; font-size: 12px; color: var(--text-muted); }
 
+    /* Update prompt modal */
+    .update-modal-overlay {
+      position: fixed; inset: 0; z-index: 2000;
+      background: rgba(0, 0, 0, 0.35);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .update-modal {
+      background: var(--bg-surface); color: var(--text-primary);
+      border: 1px solid var(--border); border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+      padding: 20px 24px; min-width: 360px; max-width: 480px;
+      font-size: 13px;
+    }
+    .update-modal-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .update-modal-subtitle { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
+    .update-modal-notes {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 10px 12px; margin: 0 0 14px; font-size: 12px;
+      max-height: 180px; overflow-y: auto; white-space: pre-wrap;
+      font-family: inherit;
+    }
+    .update-modal-body { margin-bottom: 16px; }
+    .update-modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
     /* Inline images in chat */
     .chat-inline-img {
       max-width: 100%; max-height: 400px; border-radius: 8px; margin: 4px 0;
