@@ -280,7 +280,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
     .project-group { margin-bottom: 4px; border-top: 1px solid var(--border); padding-top: 6px; }
     .project-group:first-child { border-top: none; padding-top: 0; }
     .project-group-header {
-      display: grid; grid-template-columns: auto auto 1fr auto auto; align-items: center; gap: 6px; padding: 8px 8px; cursor: default;
+      display: grid; grid-template-columns: auto auto 1fr auto auto auto; align-items: center; gap: 6px; padding: 8px 8px; cursor: default;
       user-select: none; border-radius: 6px; transition: background 0.1s;
       position: sticky; top: 0; z-index: 10; background: var(--bg);
     }
