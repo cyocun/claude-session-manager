@@ -1,56 +1,27 @@
-# Claude Session Manager
+# Contributor / AI Notes
 
-## 残タスク
+プロジェクト固有の非公開メモ（残タスク・戦略・内部的な技術判断）は `docs/` 以下（git ignore）に置く。
 
-### トークン機能
-- [ ] トークン使用量の表示 — セッション毎のinput/output tokens数、概算コストをUI上に表示
-- [ ] トークン使用量分析 — プロジェクト別・日別・週別のトークン消費トレンド、操作種別ごとの内訳、コンテキスト圧縮回数などの分析ダッシュボード
+## コード規約
 
-### セッション横断の知識発見
-- [ ] 過去セッションからの類似問題検索 — 「このエラーを前にも解決したか」をセッション横断で引ける
-- [ ] トークン消費と成果物の相関分析 — どのセッションが効率的だったかを可視化
+- フロントエンドはバンドラを入れず `tsc` のみでコンパイル（`npm run build:frontend`）。ES Modules でファイル分割する前提で、新規 `.ts` を書いたら `import ... from './foo.js'` の形で参照する
+- DOM は `innerHTML` を使わず、`createEl()` / `svgEl()` などの DOM API ヘルパー経由で構築する
+- アイコンは Tabler Icons を踏襲（24x24 viewBox、stroke-width:2）。`frontend/icons/` に SVG を追加し、`frontend/ts/icons.ts` で参照する
+- 日本語コメント可。ただしコードで語れる内容は書かない — コメントは「なぜ」だけに絞る
 
-### UI改善
-- [x] detailHeaderを2行レイアウトに整理 — Row1: プロジェクト名・セッションタイトル（titlebar内）、Row2: フィルタ＋検索（操作行）
-- [ ] ダークモードでのテーブル縞模様・ツールブロックの見え方を検証
-- [ ] セッション一覧の30秒自動更新を差分更新に最適化（現在は全DOM再構築）
-- [ ] プレビューポップオーバーのレンダリングもIntersectionObserverで最適化可能
-- [ ] セッション未選択→選択時のレイアウト遷移（1カラム→3カラム）のアニメーション検討
+## レイアウト規約
 
-### 既知の不具合
-- [ ] 横断検索結果クリック時、セッションは正しく開くが該当メッセージへのスクロール/ハイライトが効かない（常に同じ位置になる）。以前から挙動が怪しかった
-- （修正済み）全文検索ヒット→右カラムハイライトのインデックスずれ — `msgDescs` で全メッセージの `origIdx` を保持し、描画要素がないメッセージにも `data-msg-idx` アンカーを置くことで解消
-- `clear_webview_cache()` は起動時にキャッシュを全削除する力技。Tauri v2のWebView APIでの制御が理想
-- リモート環境（Claude Code web等）では `libgtk-3-dev` / `libwebkit2gtk-4.1-dev` 等のシステム依存パッケージがインストールできず `cargo build` が通らない。Rustバックエンドのビルド確認はローカルで行うこと
+- メインレイアウトは CSS Grid（`body` / `sessionListPane` / `detailPane` / `chatContainer` など）
+- Grid 子要素の overflow は `min-height: 0` を明示しないと効かない
+- ツールブロックは `overflow: hidden` を避ける（高さが 0 になる既知問題）
 
-### アーキテクチャ方針
-- フレームワーク（Nuxt/Vite等）は現状の規模では不要。レンダリング問題の本質はフレームワークでは解決しない
-- Web Components（Custom Elements）も現時点ではオーバーヘッドに見合わない。再利用するコンポーネントが少なく、Shadow DOMを使わないならカプセル化の恩恵も薄い
-- コードの整理が必要になった場合はES Modulesでのファイル分割が最優先。グローバル変数の整理と合わせて行う
+## バックエンド規約
 
-## 技術メモ
+- Tauri コマンドは `src-tauri/src/commands/{domain}.rs` にドメインごとに分割
+- フロントがバンドラレスで Tauri プラグインの JS API を直接 import できないため、プラグインを使う機能は **Rust 側でラップした `#[tauri::command]` を追加し、JS からは `invoke('...')` で呼び出す** 設計にする（例: `commands/updater.rs`）
 
-### レンダリング最適化
-- チャットメッセージ: 末尾100件を即時描画、残りをrequestIdleCallbackでDocumentFragmentに構築→一括挿入。検索時は未描画分を同期フラッシュ
-- セッション一覧: 即時レンダリング（軽量なため遅延のオーバーヘッドが逆効果）
-- セッション詳細データ: previewCache（ホバー時取得）をクリック時に再利用
-- 検索: 150msデバウンス
+## リリース / 自動アップデート
 
-### レイアウト
-- メインレイアウトはCSS Gridベース（body, sessionListPane, detailPane, chatContainer, headerRow等）
-- セッション未選択時: `grid-template-columns: 1fr`（左カラム全幅）
-- セッション選択時: `grid-template-columns: 300px 1px 1fr`（3カラム）
-- grid子要素のスクロールには `min-height: 0` が必須（デフォルトの `min-height: auto` だとoverflowが効かない）
-- ツールブロックは `overflow: hidden` を使わない（高さが0になる問題）
-
-### 全文検索（tantivy + lindera）
-- インデックス: lindera IPAdic（形態素解析）でトークナイズ。WithFreqsAndPositionsで位置情報も保持
-- 検索クエリ: 空白分割→各チャンクをlinderaでトークナイズ→PhraseQuery（連続トークン一致）。単一トークンはPrefixQuery+FuzzyQuery
-- 「そういえば」→ lindera → ["そう","いえ","ば"] → PhraseQuery で正確にヒット
-- `search-index-ready` イベントはフロントのlistener登録前に発火しうるため、初期化時に `get_search_index_status` でポーリングも行う
-- `crates/csm-core/examples/tokenize_test.rs` でlinderaのトークナイズ結果を確認できる
-
-### アイコン
-- Tabler Icons（https://tabler.io/icons）を使用。24x24 viewBox、stroke-width:2のストロークベース
-- 既存アイコンは `frontend/icons/` にSVGファイルとして配置
-- 動的生成が必要な場合は `svgEl()` ヘルパーでDOM APIを使って構築（innerHTML禁止）
+- タグ `v*` を push すると `.github/workflows/release.yml` が macOS arm64 ビルドを作り、署名付きで GitHub Releases に上げる
+- リリースを作る際は **`src-tauri/Cargo.toml` と `src-tauri/tauri.conf.json` の version を必ず揃えて bump** する
+- 署名鍵 (`~/.tauri/claude-session-manager.key`) と GitHub Secrets (`TAURI_SIGNING_PRIVATE_KEY*`) は失うと既存ユーザーへのアップデート配信が不可能になる
