@@ -1,5 +1,6 @@
 pub mod archive;
 pub mod clipboard;
+pub mod embedding;
 pub mod projects;
 pub mod pty;
 pub mod resume;

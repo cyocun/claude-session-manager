@@ -7,7 +7,8 @@ mod models;
 mod tray;
 
 use commands::{
-    archive, clipboard, projects, pty, resume, search as search_cmd, sessions, settings, updater,
+    archive, clipboard, embedding as embedding_cmd, projects, pty, resume, search as search_cmd,
+    sessions, settings, updater,
 };
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
@@ -80,6 +81,9 @@ fn main() {
             search_cmd::search_sessions,
             search_cmd::get_search_index_status,
             search_cmd::update_search_index,
+            embedding_cmd::get_embedding_model_status,
+            embedding_cmd::is_embedding_model_cached,
+            embedding_cmd::download_embedding_model,
             pty::pty_spawn,
             pty::pty_spawn_new,
             pty::pty_write,
@@ -113,6 +117,12 @@ fn main() {
             };
             app.manage(pty::PtyState::new());
             app.manage(search_index.clone());
+
+            // Embedding engine: モデル本体は初回 DL 要求時に HF から取得する
+            let embedding_dir = data_dir.join("embedding-models");
+            let embedding_engine =
+                Arc::new(csm_core::embedding::EmbeddingEngine::new(embedding_dir));
+            app.manage(embedding_engine);
 
             // Background index build
             let handle = app.handle().clone();
