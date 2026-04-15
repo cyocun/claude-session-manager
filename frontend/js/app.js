@@ -243,6 +243,33 @@ function renderInitialAvatar(name) {
     el.style.background = hashColor(name);
     return el;
 }
+// サイドバープロジェクトグループ用の小さいアイコン。favicon があれば img、無ければ initial
+function renderSidebarProjectIcon(projectPath, uri) {
+    const name = projectDisplayName(projectPath);
+    if (uri) {
+        const img = createEl('img', { className: 'project-group-favicon' });
+        img.src = uri;
+        img.alt = name;
+        return img;
+    }
+    const initial = (name || '?').charAt(0).toUpperCase();
+    const el = createEl('div', { className: 'project-group-initial', textContent: initial });
+    el.style.background = hashColor(name);
+    return el;
+}
+const iconInflight = new Map();
+function getProjectIconUri(path) {
+    if (iconCache.has(path))
+        return Promise.resolve(iconCache.get(path));
+    const existing = iconInflight.get(path);
+    if (existing)
+        return existing;
+    const p = invoke('get_project_icon', { project: path })
+        .then((uri) => { iconCache.set(path, uri); iconInflight.delete(path); return uri; })
+        .catch(() => { iconCache.set(path, null); iconInflight.delete(path); return null; });
+    iconInflight.set(path, p);
+    return p;
+}
 async function openReadmeWindow(projectPath, projectName) {
     const result = await invoke('open_readme_window', { project: projectPath, name: projectName });
     if (result === null) {
@@ -1424,7 +1451,14 @@ function renderProjectGroup(g, groups) {
     if (selectedProject === g.path)
         filterBtn.classList.add('active');
     const icon = createEl('span', { className: 'project-group-icon' });
-    icon.innerHTML = ICONS.folder; // static SVG from icons.ts
+    const cachedIcon = iconCache.has(g.path) ? iconCache.get(g.path) : null;
+    icon.appendChild(renderSidebarProjectIcon(g.path, cachedIcon));
+    if (!iconCache.has(g.path)) {
+        getProjectIconUri(g.path).then((uri) => {
+            if (uri)
+                icon.replaceChildren(renderSidebarProjectIcon(g.path, uri));
+        });
+    }
     const header = createEl('div', { className: 'project-group-header' }, [chevron, icon, name, filterBtn, startBtn, count]);
     if (projectNameMap[g.path])
         header.title = shortPath(g.path);
@@ -1631,7 +1665,27 @@ function renderDetailFooter(sessionId) {
 function renderMsgDesc(desc, resultMap) {
     const { msg: m, hasText, hasTools } = desc;
     const isUser = m.type === 'user';
+    const isRecap = m.type === 'recap';
     const els = [];
+    if (isRecap && hasText) {
+        const body = createEl('div', { className: 'md-content text-sm leading-relaxed break-words' });
+        body.innerHTML = renderMarkdown(m.content || '');
+        const icon = createEl('span', {});
+        icon.innerHTML = DOMPurify.sanitize(ICONS.history);
+        const labelChildren = [icon, createEl('span', { textContent: 'Recap' })];
+        const tsMs = typeof m.timestamp === 'string' ? Date.parse(m.timestamp) : (typeof m.timestamp === 'number' ? m.timestamp : NaN);
+        if (Number.isFinite(tsMs)) {
+            const d = new Date(tsMs);
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mm = String(d.getMinutes()).padStart(2, '0');
+            labelChildren.push(createEl('span', { className: 'recap-time', textContent: `· ${hh}:${mm}` }));
+        }
+        const label = createEl('div', { className: 'recap-label' }, labelChildren);
+        const entry = createEl('div', { className: 'recap-entry' }, [label, body]);
+        entry.style.justifySelf = 'stretch';
+        els.push(entry);
+        return els;
+    }
     if (hasTools) {
         const toolEls = renderToolBlocks(m.tools || [], resultMap, createEl);
         if (toolEls.length > 0) {

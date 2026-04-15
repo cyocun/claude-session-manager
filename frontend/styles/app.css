@@ -210,6 +210,13 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
     .bubble-user { background: var(--bubble-user-bg); color: var(--bubble-user-text); border: none; border-radius: 18px 18px 4px 18px; max-width: 80%; margin-left: auto; min-width: 0; }
     .bubble-assistant { background: var(--bubble-ai-bg); color: var(--bubble-ai-text); border: none; border-radius: 12px; min-width: 0; }
 
+    /* Recap (Claude Code v2.1.108+): セッション再開時の自動要約。GitHub blockquote/callout 風 */
+    .recap-entry { padding: 2px 0 2px 16px; margin: 16px 0; min-width: 0; border-left: 4px solid var(--accent); }
+    .recap-entry .recap-label { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); margin-bottom: 8px; }
+    .recap-entry .recap-label svg { flex: 0 0 auto; width: 18px; height: 18px; stroke-width: 2.25; }
+    .recap-entry .recap-time { color: var(--text-muted); font-weight: 500; text-transform: none; letter-spacing: 0; font-size: 12px; margin-left: 4px; }
+    .recap-entry .md-content { color: var(--text-secondary); }
+
     .md-content p { margin: 0.3em 0; }
     .md-content p:first-child { margin-top: 0; }
     .md-content p:last-child { margin-bottom: 0; }
@@ -286,6 +293,8 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
     }
     .project-group-header:hover { background: var(--item-hover); }
     .project-group-icon { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--text-muted); }
+    .project-group-favicon { width: 16px; height: 16px; border-radius: 4px; object-fit: contain; display: block; }
+    .project-group-initial { width: 16px; height: 16px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; user-select: none; }
     .project-group-chevron { font-size: 9px; color: var(--text-muted); transition: transform 0.15s; flex-shrink: 0; width: 12px; text-align: center; }
     .project-group-chevron.open { transform: rotate(90deg); }
     .project-start-btn {

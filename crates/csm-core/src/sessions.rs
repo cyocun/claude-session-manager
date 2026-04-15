@@ -249,6 +249,27 @@ fn extract_tool_info(block: &Value) -> Option<ToolInfo> {
 
 fn extract_message(msg: &Value) -> Option<Message> {
     let msg_type = msg.get("type")?.as_str()?;
+
+    // Claude Code v2.1.108+ の recap (type=system, subtype=away_summary)。
+    // 通常のメッセージと違い content がトップレベルにある
+    if msg_type == "system" && msg.get("subtype").and_then(|v| v.as_str()) == Some("away_summary") {
+        let raw = msg.get("content").and_then(|v| v.as_str()).unwrap_or("").trim();
+        let stripped = raw
+            .strip_suffix("(disable recaps in /config)")
+            .map(str::trim_end)
+            .unwrap_or(raw);
+        if stripped.is_empty() {
+            return None;
+        }
+        return Some(Message {
+            msg_type: "recap".to_string(),
+            content: stripped.chars().take(4000).collect(),
+            timestamp: msg.get("timestamp").cloned().unwrap_or(Value::Null),
+            tools: None,
+            images: None,
+        });
+    }
+
     if msg_type != "user" && msg_type != "assistant" {
         return None;
     }

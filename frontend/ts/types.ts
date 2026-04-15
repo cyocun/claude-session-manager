@@ -27,6 +27,7 @@ export type ToolEntry = {
 export type DetailMessage = {
   type: string;
   content?: string;
+  timestamp?: string | number | null;
   tools?: ToolEntry[];
   images?: Array<{ sourceType: string; mediaType: string; data: string }>;
 };
