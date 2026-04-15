@@ -153,6 +153,24 @@ export function createSearchView(deps) {
         const snippet = createEl('div', { className: 'srr-snippet' });
         snippet.innerHTML = sanitizeSnippet(hit.snippet);
         main.append(snippet);
+        if (hit.contextBefore || hit.contextAfter) {
+            const ctx = createEl('div', { className: 'srr-context' });
+            if (hit.contextBefore) {
+                const before = createEl('div', {
+                    className: 'srr-context-line',
+                    textContent: `\u2191 ${hit.contextBefore}`,
+                });
+                ctx.append(before);
+            }
+            if (hit.contextAfter) {
+                const after = createEl('div', {
+                    className: 'srr-context-line',
+                    textContent: `\u2193 ${hit.contextAfter}`,
+                });
+                ctx.append(after);
+            }
+            main.append(ctx);
+        }
         const meta = createEl('div', { className: 'srr-meta' });
         if (typeof hit.timestamp === 'number' && hit.timestamp > 0) {
             const dt = new Date(hit.timestamp);

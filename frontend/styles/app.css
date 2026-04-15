@@ -725,6 +725,14 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
       background: var(--hit-bg);
       color: var(--text); padding: 0 1px; border-radius: 2px;
     }
+    .search-result-row .srr-context {
+      margin-top: 4px;
+      display: flex; flex-direction: column; gap: 1px;
+    }
+    .search-result-row .srr-context-line {
+      font-size: 10px; line-height: 1.35; color: var(--text-faint);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
     .search-result-row .srr-meta {
       font-size: 10px; color: var(--text-faint); white-space: nowrap;
     }

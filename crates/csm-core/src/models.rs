@@ -383,6 +383,36 @@ pub struct SearchHit {
     pub timestamp: u64,
     pub message_index: u32,
     pub score: f32,
+    // Adjacent messages (Phase 2: surface context in the result row without a
+    // round-trip to fetch the full session).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_before: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_after: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchTimeRange {
+    // Epoch-ms inclusive lower bound.
+    pub from: Option<u64>,
+    // Epoch-ms exclusive upper bound.
+    pub to: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchSort {
+    Relevance,
+    Newest,
+    Oldest,
+    RelevanceRecent,
+}
+
+impl Default for SearchSort {
+    fn default() -> Self {
+        SearchSort::Relevance
+    }
 }
 
 #[derive(Debug, Serialize, Clone)]
