@@ -146,7 +146,7 @@ export function renderSearchResults(results, mode, indexReady, deps) {
         name.textContent = deps.projectDisplayName(projGroup.project);
         name.style.color = 'var(--text-secondary)';
         const count = document.createElement('span');
-        count.className = 'text-[10px] flex-shrink-0';
+        count.className = 'text-[10px] shrink-0';
         count.textContent = String(projGroup.hitCount);
         count.style.color = 'var(--text-muted)';
         const header = document.createElement('div');
@@ -161,7 +161,7 @@ export function renderSearchResults(results, mode, indexReady, deps) {
             sessTitle.textContent = title;
             sessTitle.style.color = 'var(--text)';
             const sessHitCount = document.createElement('span');
-            sessHitCount.className = 'text-[10px] flex-shrink-0';
+            sessHitCount.className = 'text-[10px] shrink-0';
             sessHitCount.textContent = `${sess.hits.length}${sess.hits.length === 1 ? ' hit' : ' hits'}`;
             sessHitCount.style.color = 'var(--text-faint)';
             const sessHeader = document.createElement('div');

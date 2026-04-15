@@ -1389,7 +1389,7 @@ async function openTokenModal(): Promise<void> {
 function renderSessionItem(s: SessionSummary): HTMLElement {
   const cb = createEl('input', {
     type: 'checkbox',
-    className: 'session-check mac-check mt-1 flex-shrink-0',
+    className: 'session-check mac-check mt-1 shrink-0',
     'data-id': s.sessionId,
     onChange: (e: Event) => {
       const target = e.target as HTMLInputElement | null;
@@ -1409,10 +1409,10 @@ function renderSessionItem(s: SessionSummary): HTMLElement {
     : null;
   if (lastMsg) lastMsg.style.color = 'var(--text-muted)';
 
-  const dot = () => { const sp = createEl('span', { className: 'text-[10px] flex-shrink-0', textContent: '·' }); sp.style.color = 'var(--text-dot)'; return sp; };
-  const meta = (txt: string, cls = '') => { const sp = createEl('span', { className: `text-[10px] flex-shrink-0 ${cls}`.trim(), textContent: txt }); sp.style.color = 'var(--text-faint)'; return sp; };
+  const dot = () => { const sp = createEl('span', { className: 'text-[10px] shrink-0', textContent: '·' }); sp.style.color = 'var(--text-dot)'; return sp; };
+  const meta = (txt: string, cls = '') => { const sp = createEl('span', { className: `text-[10px] shrink-0 ${cls}`.trim(), textContent: txt }); sp.style.color = 'var(--text-faint)'; return sp; };
   const metaParts = [meta(timeAgo(s.lastTimestamp, lang, t), 'session-meta-time'), dot(), meta(s.messageCount + t('msg'), 'session-meta-count')];
-  if (s.archived) { const sp = createEl('span', { className: 'session-meta-archived text-[10px] flex-shrink-0', textContent: t('archived') }); sp.style.color = 'var(--text-faint)'; metaParts.push(sp); }
+  if (s.archived) { const sp = createEl('span', { className: 'session-meta-archived text-[10px] shrink-0', textContent: t('archived') }); sp.style.color = 'var(--text-faint)'; metaParts.push(sp); }
 
   const updated = isUpdatedSession(s);
 
@@ -1422,7 +1422,7 @@ function renderSessionItem(s: SessionSummary): HTMLElement {
 
   const rowChildren = [cb];
   if (updated) {
-    const updDot = createEl('span', { className: 'session-updated-dot flex-shrink-0 mt-1.5' });
+    const updDot = createEl('span', { className: 'session-updated-dot shrink-0 mt-1.5' });
     updDot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--updated-dot);';
     rowChildren.push(updDot);
   }
@@ -1433,7 +1433,7 @@ function renderSessionItem(s: SessionSummary): HTMLElement {
   const isActive = selectedSession === s.sessionId;
   const defaultBg = updated ? 'var(--updated-bg)' : 'transparent';
   const item = createEl('div', {
-    className: 'session-item p-3 rounded cursor-default transition border overflow-hidden',
+    className: 'session-item p-3 rounded-sm cursor-default transition border overflow-hidden',
     'data-id': s.sessionId,
     'data-project': s.project,
     'data-default-bg': defaultBg,
@@ -1555,7 +1555,7 @@ function renderProjectGroup(g: ProjectGroup, groups: ProjectGroup[]): HTMLElemen
   const chevron = createEl('span', { className: 'project-group-chevron' + (open ? ' open' : ''), textContent: '\u25B6' });
   const name = createEl('span', { className: 'text-xs font-medium flex-1 truncate', textContent: projectDisplayName(g.path) });
   name.style.color = 'var(--text-secondary)';
-  const count = createEl('span', { className: 'text-[10px] flex-shrink-0', textContent: g.sessions.length + '' });
+  const count = createEl('span', { className: 'text-[10px] shrink-0', textContent: g.sessions.length + '' });
   count.style.cssText = 'color:var(--text-muted);min-width:24px;text-align:right;';
   const startBtn = createEl('button', {
     className: 'project-start-btn',
@@ -1760,7 +1760,7 @@ function renderDetailHeader(sessionId: string, detail: SessionDetail, headerEl: 
 function renderDetailFooter(sessionId: string): void {
   const mkBtn = (text: string, isPrimary: boolean, onClick: () => void | Promise<void>): HTMLElement => {
     const btn = createEl('button', {
-      className: 'mac-btn flex-shrink-0' + (isPrimary ? ' mac-btn-primary' : ''),
+      className: 'mac-btn shrink-0' + (isPrimary ? ' mac-btn-primary' : ''),
       textContent: text, onClick
     });
     return btn;

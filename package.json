@@ -4,7 +4,8 @@
   "description": "Claude Code の会話履歴を一元管理する Web UI。複数ディレクトリで実行されたセッションを横断的に閲覧・検索・再開できる。",
   "main": "index.js",
   "scripts": {
-    "build:frontend": "tsc -p tsconfig.json",
+    "build:css": "tailwindcss -i frontend/styles/tailwind-input.css -o frontend/vendor/tailwind.min.css --minify",
+    "build:frontend": "tsc -p tsconfig.json && npm run build:css",
     "tauri": "npm run build:frontend && tauri",
     "tauri:dev": "npm run build:frontend && tauri dev",
     "tauri:build": "npm run build:frontend && tauri build",
@@ -22,7 +23,9 @@
   },
   "homepage": "https://github.com/cyocun/claude-session-manager#readme",
   "devDependencies": {
+    "@tailwindcss/cli": "^4.2.2",
     "@tauri-apps/cli": "^2.10.1",
+    "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3"
   }
 }

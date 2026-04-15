@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+/* v4 はソースファイルの自動スキャンで未使用クラスを排除する。
+   tsc の出力先 frontend/js も走査対象に含めておくことで、
+   TS から生成された JS 内の className 文字列も拾える。 */
+@source "../index.html";
+@source "../readme.html";
+@source "../ts/**/*.ts";
+@source "../js/**/*.js";

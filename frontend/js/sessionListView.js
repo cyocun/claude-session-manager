@@ -35,7 +35,7 @@ function ensureUpdatedDot(item, shouldShow) {
     if (shouldShow) {
         if (!existing) {
             const dot = document.createElement('span');
-            dot.className = 'session-updated-dot flex-shrink-0 mt-1.5';
+            dot.className = 'session-updated-dot shrink-0 mt-1.5';
             dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--updated-dot);';
             row.insertBefore(dot, row.children[1] || null);
         }
@@ -86,7 +86,7 @@ export function patchSessionListItems(deps) {
             metaCount.textContent = `${session.messageCount}${msgSuffix}`;
         const metaDiv = item.querySelector('.session-meta');
         if (metaDiv) {
-            updateMetaBadge(metaDiv, '.session-meta-archived', 'session-meta-archived text-[10px] flex-shrink-0', session.archived ? archivedLabel : '');
+            updateMetaBadge(metaDiv, '.session-meta-archived', 'session-meta-archived text-[10px] shrink-0', session.archived ? archivedLabel : '');
         }
         const checkbox = item.querySelector('.session-check');
         if (checkbox)

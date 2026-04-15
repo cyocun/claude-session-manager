@@ -1260,7 +1260,7 @@ async function openTokenModal() {
 function renderSessionItem(s) {
     const cb = createEl('input', {
         type: 'checkbox',
-        className: 'session-check mac-check mt-1 flex-shrink-0',
+        className: 'session-check mac-check mt-1 shrink-0',
         'data-id': s.sessionId,
         onChange: (e) => {
             const target = e.target;
@@ -1282,11 +1282,11 @@ function renderSessionItem(s) {
         : null;
     if (lastMsg)
         lastMsg.style.color = 'var(--text-muted)';
-    const dot = () => { const sp = createEl('span', { className: 'text-[10px] flex-shrink-0', textContent: '·' }); sp.style.color = 'var(--text-dot)'; return sp; };
-    const meta = (txt, cls = '') => { const sp = createEl('span', { className: `text-[10px] flex-shrink-0 ${cls}`.trim(), textContent: txt }); sp.style.color = 'var(--text-faint)'; return sp; };
+    const dot = () => { const sp = createEl('span', { className: 'text-[10px] shrink-0', textContent: '·' }); sp.style.color = 'var(--text-dot)'; return sp; };
+    const meta = (txt, cls = '') => { const sp = createEl('span', { className: `text-[10px] shrink-0 ${cls}`.trim(), textContent: txt }); sp.style.color = 'var(--text-faint)'; return sp; };
     const metaParts = [meta(timeAgo(s.lastTimestamp, lang, t), 'session-meta-time'), dot(), meta(s.messageCount + t('msg'), 'session-meta-count')];
     if (s.archived) {
-        const sp = createEl('span', { className: 'session-meta-archived text-[10px] flex-shrink-0', textContent: t('archived') });
+        const sp = createEl('span', { className: 'session-meta-archived text-[10px] shrink-0', textContent: t('archived') });
         sp.style.color = 'var(--text-faint)';
         metaParts.push(sp);
     }
@@ -1296,7 +1296,7 @@ function renderSessionItem(s) {
     const textDiv = createEl('div', { className: 'session-text min-w-0 overflow-hidden' }, [firstMsg, lastMsg, metaDiv].filter(Boolean));
     const rowChildren = [cb];
     if (updated) {
-        const updDot = createEl('span', { className: 'session-updated-dot flex-shrink-0 mt-1.5' });
+        const updDot = createEl('span', { className: 'session-updated-dot shrink-0 mt-1.5' });
         updDot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--updated-dot);';
         rowChildren.push(updDot);
     }
@@ -1306,7 +1306,7 @@ function renderSessionItem(s) {
     const isActive = selectedSession === s.sessionId;
     const defaultBg = updated ? 'var(--updated-bg)' : 'transparent';
     const item = createEl('div', {
-        className: 'session-item p-3 rounded cursor-default transition border overflow-hidden',
+        className: 'session-item p-3 rounded-sm cursor-default transition border overflow-hidden',
         'data-id': s.sessionId,
         'data-project': s.project,
         'data-default-bg': defaultBg,
@@ -1424,7 +1424,7 @@ function renderProjectGroup(g, groups) {
     const chevron = createEl('span', { className: 'project-group-chevron' + (open ? ' open' : ''), textContent: '\u25B6' });
     const name = createEl('span', { className: 'text-xs font-medium flex-1 truncate', textContent: projectDisplayName(g.path) });
     name.style.color = 'var(--text-secondary)';
-    const count = createEl('span', { className: 'text-[10px] flex-shrink-0', textContent: g.sessions.length + '' });
+    const count = createEl('span', { className: 'text-[10px] shrink-0', textContent: g.sessions.length + '' });
     count.style.cssText = 'color:var(--text-muted);min-width:24px;text-align:right;';
     const startBtn = createEl('button', {
         className: 'project-start-btn',
@@ -1620,7 +1620,7 @@ function renderDetailHeader(sessionId, detail, headerEl) {
 function renderDetailFooter(sessionId) {
     const mkBtn = (text, isPrimary, onClick) => {
         const btn = createEl('button', {
-            className: 'mac-btn flex-shrink-0' + (isPrimary ? ' mac-btn-primary' : ''),
+            className: 'mac-btn shrink-0' + (isPrimary ? ' mac-btn-primary' : ''),
             textContent: text, onClick
         });
         return btn;
