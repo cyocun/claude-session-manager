@@ -1,0 +1,4 @@
+{"type":"user","timestamp":1712500000000,"message":{"content":"OAuth の認証トークンをリフレッシュする実装を書きたい"}}
+{"type":"assistant","timestamp":1712500030000,"message":{"content":[{"type":"text","text":"リフレッシュトークンの寿命、失効時の再認可フロー、そして並行リクエスト中の二重リフレッシュ防止の 3 点が主な検討事項です。"}]}}
+{"type":"user","timestamp":1712500120000,"message":{"content":"リフレッシュトークンの寿命ってどのくらいを標準にすべきだろう"}}
+{"type":"assistant","timestamp":1712500150000,"message":{"content":[{"type":"text","text":"Google や GitHub は数ヶ月〜無期限ですが、自社発行ならセキュリティ要件に応じて 30 日〜90 日が妥当です。"}]}}

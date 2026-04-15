@@ -1,0 +1,5 @@
+{"type":"user","timestamp":1712000000000,"message":{"content":"Tauri のビルドが通らないんだけど、ort のリンクで失敗してるっぽい"}}
+{"type":"assistant","timestamp":1712000030000,"message":{"content":[{"type":"text","text":"ONNX Runtime の dylib が実行時に見つからないケースと、リンク時に見つからないケースがあります。まずはどちらで落ちてるか確認しましょう。"}]}}
+{"type":"user","timestamp":1712000060000,"message":{"content":"ort の dylib が見つからないエラーが出てる。cargo build は通るのに tauri dev で落ちる"}}
+{"type":"assistant","timestamp":1712000090000,"message":{"content":[{"type":"text","text":"それは動的リンク版の onnxruntime が bundle に含まれていない典型ケースです。download-binaries feature を確認してみてください。"}]}}
+{"type":"user","timestamp":1712000120000,"message":{"content":"download-binaries を有効化したら通った、ありがとう"}}

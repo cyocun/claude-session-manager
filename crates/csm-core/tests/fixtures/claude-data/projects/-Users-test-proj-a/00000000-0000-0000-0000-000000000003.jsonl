@@ -1,0 +1,3 @@
+{"type":"user","timestamp":1713000000000,"message":{"content":"CSS グリッドの中で子要素の overflow: hidden が効かないんだけど"}}
+{"type":"assistant","timestamp":1713000030000,"message":{"content":[{"type":"text","text":"Grid / Flex の子要素は min-height が auto になるため、overflow が正常に効かないことがあります。min-height: 0 を明示してください。"}]}}
+{"type":"user","timestamp":1713000180000,"message":{"content":"min-height: 0 を指定したら直った、なるほど"}}
