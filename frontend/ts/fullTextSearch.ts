@@ -1,4 +1,5 @@
 import { normalizeSearchQuery, parseSearchQuery } from './searchUtils.js';
+import { searchTelemetry } from './searchTelemetry.js';
 import type { SearchHit, SearchMode, SearchSort } from './types.js';
 
 export type SearchFilterPayload = {
@@ -48,6 +49,13 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
   let searchIndexReady = false;
   let fulltextSearchTimer: ReturnType<typeof setTimeout> | null = null;
   let searchRequestSeq = 0;
+  // Correlation id for the most recent completed search. Used by
+  // searchView/app.ts to tag open_result and escape_no_open events.
+  let currentQueryId: string | null = null;
+
+  function getCurrentQueryId(): string | null {
+    return currentQueryId;
+  }
 
   function getMode(): SearchMode {
     return searchMode;
@@ -102,12 +110,23 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     const trimmedQuery = query.trim();
     if (!trimmedQuery || trimmedQuery.length < 2) {
       const wasActive = activeQuery.length >= 2;
+      const dismissedQueryId = currentQueryId;
       activeQuery = '';
       activeResolvedQuery = '';
       if (wasActive && searchView.isActive()) {
+        // exit() reads getCurrentQueryId() to tag an escape_no_open event,
+        // so keep currentQueryId alive across the exit call and clear after.
         searchView.exit();
         onExit();
+        if (dismissedQueryId) {
+          searchTelemetry.append({
+            type: 'cleared_input',
+            queryId: dismissedQueryId,
+            timestamp: Date.now(),
+          });
+        }
       }
+      currentQueryId = null;
       return;
     }
 
@@ -130,6 +149,7 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     };
     if (filterPayload.timeRange) searchArgs.timeRange = filterPayload.timeRange;
     if (filterPayload.msgTypes) searchArgs.msgTypes = filterPayload.msgTypes;
+    const startedAt = performance.now();
     let results: SearchHit[] = [];
     let resolvedQuery = trimmedQuery;
     try {
@@ -161,6 +181,22 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
 
     activeResolvedQuery = resolvedQuery;
     searchView.renderResults(results, activeSearchMode, searchIndexReady, resolvedQuery);
+
+    // Mint a new correlation id per completed search; subsequent open/escape
+    // events tag against it. Done after render so telemetry reflects the
+    // actual result set the user saw.
+    currentQueryId = searchTelemetry.newQueryId();
+    searchTelemetry.append({
+      type: 'search',
+      queryId: currentQueryId,
+      query: resolvedQuery,
+      mode: requestMode,
+      filters: filterPayload,
+      resultCount: results.length,
+      durationMs: Math.round(performance.now() - startedAt),
+      indexReady: searchIndexReady,
+      timestamp: Date.now(),
+    });
   }
 
   function clear(): void {
@@ -211,5 +247,6 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     bindInputEvents,
     getActiveResolvedQuery,
     rerun,
+    getCurrentQueryId,
   };
 }

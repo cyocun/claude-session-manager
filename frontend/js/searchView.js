@@ -8,6 +8,7 @@
 // whatever they were looking at before.
 import { createEl, setHighlight } from './dom.js';
 import { sanitizeSnippet } from './searchUtils.js';
+import { searchTelemetry } from './searchTelemetry.js';
 const PREVIEW_WINDOW = 3;
 const FILTERS_STORAGE_KEY = 'csm-search-filters';
 const DEFAULT_FILTERS = {
@@ -54,11 +55,14 @@ function timePresetToFromMs(preset) {
     }
 }
 export function createSearchView(deps) {
-    const { byId, byIdOptional, t, invoke, getSessions, projectDisplayName, openSession, onRequestExit, onFiltersChanged, } = deps;
+    const { byId, byIdOptional, t, invoke, getSessions, projectDisplayName, openSession, onRequestExit, onFiltersChanged, getCurrentQueryId, } = deps;
     let active = false;
     let rows = [];
     let activeIdx = -1;
     let filters = loadFilters();
+    // Whether any result was opened since the current search was rendered.
+    // Flipped to true on confirmActive()/double-click; reset on each new search.
+    let resultOpenedForCurrentQuery = false;
     let previewSeq = 0;
     let lastPreviewSessionId = null;
     let lastPreviewMessageIndex = -1;
@@ -168,6 +172,20 @@ export function createSearchView(deps) {
     function exit() {
         if (!active)
             return;
+        // Telemetry: if the user dismissed search without opening a result, record
+        // an escape_no_open event. Filtering by rows.length>0 avoids logging an
+        // exit from a 0-hit query as an "abandonment" — that's already captured
+        // by the search event's resultCount=0.
+        if (rows.length > 0 && !resultOpenedForCurrentQuery) {
+            const qid = getCurrentQueryId();
+            if (qid) {
+                searchTelemetry.append({
+                    type: 'escape_no_open',
+                    queryId: qid,
+                    timestamp: Date.now(),
+                });
+            }
+        }
         active = false;
         const detailPane = byIdOptional('detailPane');
         const searchPane = byId('searchResultPane');
@@ -179,6 +197,7 @@ export function createSearchView(deps) {
         }
         rows = [];
         activeIdx = -1;
+        resultOpenedForCurrentQuery = false;
         lastPreviewSessionId = null;
         lastPreviewMessageIndex = -1;
     }
@@ -217,6 +236,111 @@ export function createSearchView(deps) {
         else {
             summary.append(countEl);
         }
+        // Spacer + telemetry indicator pushes to the right edge.
+        const spacer = createEl('span', {});
+        spacer.style.cssText = 'flex:1 1 auto;';
+        summary.append(spacer, buildTelemetryIndicator());
+    }
+    function buildTelemetryIndicator() {
+        const enabled = searchTelemetry.isEnabled();
+        const btn = createEl('button', {
+            className: 'search-telemetry-btn' + (enabled ? ' on' : ''),
+            title: t(enabled ? 'searchLogEnabled' : 'searchLogDisabled'),
+            textContent: enabled ? '\u25CF ' + t('searchLogBadgeOn') : t('searchLogBadgeOff'),
+        });
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openTelemetryPopover(btn);
+        });
+        return btn;
+    }
+    let openPopover = null;
+    function closePopover() {
+        if (openPopover) {
+            openPopover.remove();
+            openPopover = null;
+        }
+    }
+    function openTelemetryPopover(anchor) {
+        if (openPopover) {
+            closePopover();
+            return;
+        }
+        const rect = anchor.getBoundingClientRect();
+        const popover = createEl('div', { className: 'search-telemetry-popover' });
+        popover.style.cssText = `position:fixed;top:${rect.bottom + 4}px;right:${window.innerWidth - rect.right}px;z-index:300;`;
+        const heading = createEl('div', {
+            className: 'stp-heading',
+            textContent: t('searchLogHeading'),
+        });
+        const desc = createEl('div', {
+            className: 'stp-desc',
+            textContent: t('searchLogDesc'),
+        });
+        const toggleWrap = createEl('label', { className: 'stp-toggle' });
+        const toggle = createEl('input', { type: 'checkbox' });
+        toggle.checked = searchTelemetry.isEnabled();
+        toggle.addEventListener('change', () => {
+            searchTelemetry.setEnabled(toggle.checked);
+            // Re-render summary so the indicator reflects the new state.
+            updateSummary([], 'fulltext', true, currentQuery);
+            // Close and reopen to refresh stats.
+            closePopover();
+            openTelemetryPopover(anchor);
+        });
+        const toggleLabel = createEl('span', { textContent: t('searchLogToggle') });
+        toggleWrap.append(toggle, toggleLabel);
+        const stats = searchTelemetry.summarize();
+        const statsEl = createEl('div', { className: 'stp-stats' });
+        if (stats.totalSearches === 0) {
+            statsEl.textContent = t('searchLogEmpty');
+        }
+        else {
+            const lines = [
+                `${t('searchLogStatSearches')}: ${stats.totalSearches}`,
+                `${t('searchLogStatZero')}: ${Math.round(stats.zeroHitRate * 100)}%`,
+                `${t('searchLogStatOpen')}: ${Math.round(stats.openRate * 100)}%`,
+                `${t('searchLogStatAvg')}: ${Math.round(stats.avgDurationMs)}ms`,
+            ];
+            statsEl.textContent = lines.join(' · ');
+        }
+        const actions = createEl('div', { className: 'stp-actions' });
+        const exportBtn = createEl('button', {
+            className: 'mac-btn',
+            textContent: t('searchLogExport'),
+            onClick: () => {
+                const events = searchTelemetry.snapshot();
+                const json = JSON.stringify(events, null, 2);
+                if (navigator.clipboard) {
+                    void navigator.clipboard.writeText(json).catch(() => { });
+                }
+                closePopover();
+            },
+        });
+        const clearBtn = createEl('button', {
+            className: 'mac-btn',
+            textContent: t('searchLogClear'),
+            onClick: () => {
+                searchTelemetry.clear();
+                closePopover();
+                openTelemetryPopover(anchor);
+            },
+        });
+        actions.append(exportBtn, clearBtn);
+        popover.append(heading, desc, toggleWrap, statsEl, actions);
+        document.body.appendChild(popover);
+        openPopover = popover;
+        // Close when clicking outside
+        const outside = (e) => {
+            if (!openPopover)
+                return;
+            if (!openPopover.contains(e.target) && e.target !== anchor) {
+                closePopover();
+                document.removeEventListener('mousedown', outside);
+            }
+        };
+        // defer so the click that opened it doesn't immediately close
+        setTimeout(() => document.addEventListener('mousedown', outside), 0);
     }
     function groupResults(results) {
         const order = [];
@@ -232,6 +356,9 @@ export function createSearchView(deps) {
     }
     function renderResults(results, mode, indexReady, query) {
         currentQuery = query;
+        // New search → reset the "opened anything?" flag so escape_no_open fires
+        // correctly if the user dismisses this new result set.
+        resultOpenedForCurrentQuery = false;
         updateSummary(results, mode, indexReady, query);
         const list = byId('searchResultList');
         list.replaceChildren();
@@ -320,6 +447,9 @@ export function createSearchView(deps) {
                 setActiveIndex(idx, { scroll: false });
         });
         row.addEventListener('dblclick', () => {
+            const idx = rows.findIndex((r) => r.el === row);
+            if (idx >= 0)
+                logOpen(hit, idx);
             void openSession(hit.sessionId, hit.messageIndex);
         });
         return row;
@@ -385,6 +515,9 @@ export function createSearchView(deps) {
             className: 'sph-open',
             textContent: t('searchOpenSession'),
             onClick: () => {
+                const idx = rows.findIndex((r) => r.hit === hit);
+                if (idx >= 0)
+                    logOpen(hit, idx);
                 void openSession(hit.sessionId, hit.messageIndex);
             },
         });
@@ -459,7 +592,21 @@ export function createSearchView(deps) {
         if (activeIdx < 0 || activeIdx >= rows.length)
             return;
         const hit = rows[activeIdx].hit;
+        logOpen(hit, activeIdx);
         void openSession(hit.sessionId, hit.messageIndex);
+    }
+    function logOpen(hit, position) {
+        resultOpenedForCurrentQuery = true;
+        const qid = getCurrentQueryId();
+        if (!qid)
+            return;
+        searchTelemetry.append({
+            type: 'open_result',
+            queryId: qid,
+            position,
+            msgType: hit.msgType,
+            timestamp: Date.now(),
+        });
     }
     function handleKeyDown(e) {
         if (!active)

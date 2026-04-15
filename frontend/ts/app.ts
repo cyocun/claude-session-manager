@@ -206,6 +206,7 @@ const searchView = createSearchView({
     // debounces the actual invoke.
     fullTextSearch.rerun();
   },
+  getCurrentQueryId: () => fullTextSearch.getCurrentQueryId(),
 });
 const fullTextSearch = createFullTextSearchController({
   byId,

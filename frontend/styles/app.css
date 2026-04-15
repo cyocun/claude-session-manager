@@ -677,6 +677,49 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
       overflow-y: auto;
     }
 
+    /* Search telemetry indicator + popover (Phase 4) */
+    .search-telemetry-btn {
+      background: none; border: 1px solid var(--border);
+      color: var(--text-faint); font-size: 10px;
+      padding: 2px 8px; border-radius: 10px; cursor: default;
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .search-telemetry-btn:hover { background: var(--item-hover); }
+    .search-telemetry-btn.on {
+      color: var(--accent); border-color: var(--accent);
+    }
+    .search-telemetry-popover {
+      background: var(--modal-bg, var(--bg-surface));
+      border: 1px solid var(--modal-border, var(--border));
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      padding: 12px 14px;
+      min-width: 280px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .dark .search-telemetry-popover { box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+    .search-telemetry-popover .stp-heading {
+      font-size: 12px; font-weight: 600; color: var(--text);
+    }
+    .search-telemetry-popover .stp-desc {
+      font-size: 11px; color: var(--text-faint); line-height: 1.4;
+    }
+    .search-telemetry-popover .stp-toggle {
+      display: flex; align-items: center; gap: 6px; font-size: 12px;
+      color: var(--text); cursor: default;
+    }
+    .search-telemetry-popover .stp-stats {
+      font-size: 11px; color: var(--text-secondary);
+      padding: 6px 8px; background: var(--bg-chat);
+      border-radius: 4px; line-height: 1.4;
+    }
+    .search-telemetry-popover .stp-actions {
+      display: flex; gap: 6px; justify-content: flex-end;
+    }
+    .search-telemetry-popover .stp-actions .mac-btn {
+      font-size: 11px; padding: 4px 8px;
+    }
+
     /* Search mode: filter bar chips */
     .search-filter-group {
       display: inline-flex; align-items: center; gap: 6px;
