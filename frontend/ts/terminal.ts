@@ -9,6 +9,7 @@ import { invoke, invokeStrict, isTauri } from './tauri.js';
 // but xterm-addon-fit assigns the namespace object (window.FitAddon = { FitAddon: class }).
 declare const Terminal: any;
 declare const FitAddon: { FitAddon: new () => any };
+declare const Unicode11Addon: { Unicode11Addon: new () => any };
 
 const STORAGE_KEY_HEIGHT = 'csm-terminal-height';
 const DEFAULT_HEIGHT = 300;
@@ -134,6 +135,10 @@ export async function openTerminal(
 
   const fitAddon = new FitAddon.FitAddon();
   term.loadAddon(fitAddon);
+  // 絵文字を wide (2 cell) として扱わせる。未指定だと Unicode 6 ベースで狭くなり、
+  // 次文字が食い込んで見える。
+  term.loadAddon(new Unicode11Addon.Unicode11Addon());
+  term.unicode.activeVersion = '11';
 
   term.open(container);
   fitAddon.fit();
@@ -232,6 +237,8 @@ export async function openTerminalNew(
 
   const fitAddon = new FitAddon.FitAddon();
   term.loadAddon(fitAddon);
+  term.loadAddon(new Unicode11Addon.Unicode11Addon());
+  term.unicode.activeVersion = '11';
   term.open(container);
   fitAddon.fit();
 

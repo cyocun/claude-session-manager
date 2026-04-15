@@ -114,6 +114,10 @@ export async function openTerminal(sessionId, container, onExit) {
     });
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
+    // 絵文字を wide (2 cell) として扱わせる。未指定だと Unicode 6 ベースで狭くなり、
+    // 次文字が食い込んで見える。
+    term.loadAddon(new Unicode11Addon.Unicode11Addon());
+    term.unicode.activeVersion = '11';
     term.open(container);
     fitAddon.fit();
     // Spawn PTY
@@ -198,6 +202,8 @@ export async function openTerminalNew(project, container, onExit) {
     });
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
+    term.loadAddon(new Unicode11Addon.Unicode11Addon());
+    term.unicode.activeVersion = '11';
     term.open(container);
     fitAddon.fit();
     let ptyId;
