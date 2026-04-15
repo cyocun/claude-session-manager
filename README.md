@@ -1,34 +1,93 @@
 # Claude Session Manager
 
-Claude Code のローカル履歴 (`~/.claude`) を横断的に閲覧・検索・再開できる macOS デスクトップアプリ。プロジェクトごとに散らばったセッションを一箇所から眺め、過去の会話を掘り起こし、任意のセッションを任意のターミナルで再開できる。
+**🇬🇧 English** | [🇯🇵 日本語](./README.ja.md) | [🇨🇳 简体中文](./README.zh-CN.md)
 
-> **ステータス**: 個人用途向けの実験的プロジェクト。macOS (Apple Silicon) のみ動作確認。
+![status](https://img.shields.io/badge/status-private%20%2F%20WIP-orange)
+![platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-lightgrey)
+![license](https://img.shields.io/badge/license-Private-red)
 
----
+A native macOS desktop app for browsing, searching, and resuming your local Claude Code history (`~/.claude`). Sessions scattered across dozens of projects become one unified, searchable, shippable surface.
 
-## ハイライト
-
-- **クロスプロジェクト一覧** — `~/.claude/projects/` 配下を自動スキャンし、最終更新で並び替え
-- **全文検索** — Tantivy + lindera (IPAdic) による日本語対応インデックス。フレーズ一致 + Fuzzy/Prefix
-- **ツールブロック描画** — `Bash` / `Edit` / `Read` / `Grep` 等のツール呼び出しをブロック単位で見やすく整形（diff ハイライト、言語別シンタックス含む）
-- **トークンダッシュボード** — 入出力/キャッシュ別の推移、モデル別コスト、ツール使用頻度、アクティビティ heatmap、ワードクラウドなど
-- **ターミナル再開** — Terminal.app / iTerm / Warp / Ghostty / cmux から選んで `claude --resume` を起動
-- **プロジェクト統計** — サイドバーからプロジェクト単位で直近セッションを一覧、Finder / ターミナルでのディレクトリオープン
-- **自動アップデート** — GitHub Releases 経由、起動時に確認
+> **Status** — Private, experimental project under active development. macOS on Apple Silicon only. No public support, no stability guarantees.
 
 ---
 
-## インストール
+## Why this exists
 
-### DMG から（推奨）
+The Claude Code CLI stores every conversation locally, but gives you no real way to search across them. Once you have hundreds of sessions, the history becomes write-only. This app treats that history as a first-class, queryable archive:
 
-1. [Releases](https://github.com/cyocun/claude-session-manager/releases/latest) から `Claude.Sessions_*_aarch64.dmg` をダウンロード
-2. DMG を開いて Applications にドラッグ
-3. 初回起動時は未ノータライズのため「開発元を確認できません」と出る → **右クリック → 開く** で突破
+- **Hybrid search that actually works on real history** — lexical (BM25) and semantic (vector) results fused with Reciprocal Rank Fusion, tuned for noisy chat logs
+- **Japanese-first tokenization** — lindera + IPAdic, with phrase-slop matching so particles and compound words do not wreck recall
+- **Local-only by design** — conversations never leave your machine; the only outbound traffic is update checks
+- **Cost transparency** — input / output / cache token trends and per-model USD estimates, per project or per session
+- **Structured tool-call rendering** — `Bash`, `Edit`, `Read`, `Grep` and friends displayed as blocks with diff highlighting and language-aware syntax, rather than a wall of JSON
 
-### ソースから
+## Differentiation
 
-前提: Node.js 18+, Rust stable, Xcode Command Line Tools。
+| | Official Claude Code CLI | Generic session viewers | **Claude Session Manager** |
+|---|---|---|---|
+| Cross-project browsing | Manual | Partial | Auto-scan, sorted by recency |
+| Full-text search | None | substring only | Tantivy BM25 with phrase slop |
+| Semantic search | None | None | Multilingual-E5-Large + RRF fusion |
+| Japanese tokenization | None | None | lindera IPAdic |
+| Tool-call rendering | Raw text | Raw text | Structured blocks + diff + syntax |
+| Token / cost analytics | None | None | Full dashboard (trends, heatmaps, word clouds) |
+| Terminal resume | CLI only | — | Launches Terminal / iTerm / Warp / Ghostty / cmux |
+| Privacy | Local | Varies | Local-only; outbound = update check |
+| Auto-update | Manual | Varies | Signed GitHub Releases, background check |
+
+---
+
+## Features
+
+### Browse
+
+- Cross-project session list, sorted by last update
+- Detail view with per-message rendering and structured tool blocks
+- Project stats in the sidebar (recent sessions, totals, last update)
+- Archive with undo-from-toast
+
+### Search
+
+- **Full-text (BM25)** via Tantivy + lindera (IPAdic) — phrase match, fuzzy, prefix, slop-tolerant for particles
+- **Semantic (vector)** via Multilingual-E5-Large embeddings, chunked per user turn
+- **Hybrid** — BM25 and vector results fused with Reciprocal Rank Fusion (K=60); each hit is tagged with which source surfaced it
+- Filters: time range, message type, sort by relevance / newest / oldest
+- In-session chat search (`⌘F`) and cross-session full-text search (`⌘⇧F`)
+
+### Analytics
+
+- Input / output / cache token trends across hour / day / week / month
+- Per-model cost estimates (USD)
+- Tool usage ranking
+- Activity heatmap
+- Word cloud over frequent terms
+
+### Terminal integration
+
+- One-key resume (`⌘↵`) into Terminal.app / iTerm / Warp / Ghostty / cmux
+- `claude --resume` generated and dispatched natively
+- New session from project root (`⌘N`)
+
+### System
+
+- Auto-update via signed GitHub Releases (checked on launch and every 6 hours)
+- Theme selection (system / light / dark)
+- Native macOS behaviors: menu bar, tray, `⌘Tab`, always-on-top
+
+---
+
+## Install
+
+### From DMG (recommended)
+
+1. Download `Claude.Sessions_*_aarch64.dmg` from [Releases](https://github.com/cyocun/claude-session-manager/releases/latest)
+2. Open the DMG and drag the app to Applications
+3. First launch is unnotarized — right-click → **Open** to bypass Gatekeeper
+
+### From source
+
+Requires Node.js 18+, Rust stable, Xcode Command Line Tools.
 
 ```bash
 git clone https://github.com/cyocun/claude-session-manager.git
@@ -37,104 +96,82 @@ npm install
 npm run tauri:build
 ```
 
-ビルド成果物:
+Build artifacts:
 
 - `src-tauri/target/release/bundle/macos/Claude Sessions.app`
 - `src-tauri/target/release/bundle/dmg/Claude Sessions_*.dmg`
 
 ---
 
-## 使い方
+## Keybindings
 
-起動するとサイドバーに直近セッションが並ぶ。
-
-- **セッションをクリック** — 右カラムに会話詳細を表示
-- **⌘F** — チャット内検索（現在セッション）
-- **⌘⇧F** — 全文検索（全セッション横断）
-- **⌘↵** — 選択中のセッションを設定済みターミナルで resume
-- **⌘N** — プロジェクトルートから新規セッション開始
-- **⌘⌫** — 選択中セッションをアーカイブ（トーストから undo 可）
-- **⌘,** — 設定（テーマ / 言語 / ターミナル選択）
-
-起動時の「最近のプロジェクト」カードから直接新規セッションを開いたり、トークンダッシュボードを開いたりできる。
+| Shortcut | Action |
+|---|---|
+| `⌘F` | Search within current session |
+| `⌘⇧F` | Cross-session full-text search |
+| `⌘↵` | Resume selected session in configured terminal |
+| `⌘N` | New session from project root |
+| `⌘⌫` | Archive selected session (undo from toast) |
+| `⌘,` | Settings (theme / language / terminal) |
 
 ---
 
-## 自動アップデート
-
-アプリ起動 5 秒後と 6 時間ごとにバックグラウンドで新バージョンの有無をチェックする。新しいバージョンが見つかると確認ダイアログが出て、承認するとダウンロード → 署名検証 → 再起動で差し替わる。
-
----
-
-## アーキテクチャ
+## Architecture
 
 ```
 claude-session-manager/
-├── src-tauri/            # Tauri (Rust) アプリケーション層
-│   ├── src/
-│   │   ├── commands/     # ドメイン別 #[tauri::command] ハンドラ
-│   │   ├── menu.rs       # メニューバー
-│   │   └── tray.rs       # ステータスアイコン
+├── src-tauri/            # Tauri (Rust) application layer
+│   ├── src/commands/     # domain-split #[tauri::command] handlers
 │   └── tauri.conf.json
 ├── crates/
-│   ├── csm-core/         # Tauri に依存しないコア (検索 / セッション解析)
-│   └── csm-mcp/          # MCP サーバー（別途外部バイナリとしてバンドル）
-└── frontend/             # 素の TypeScript + HTML + CSS（バンドラなし）
-    ├── ts/               # ソース。`tsc` で `js/` に出力
-    ├── js/               # 生成物（コミット対象）
-    ├── styles/
+│   ├── csm-core/         # Tauri-independent core (search / sessions / embedding)
+│   └── csm-mcp/          # MCP server, bundled as a separate binary
+└── frontend/             # plain TypeScript + HTML + CSS, no bundler
+    ├── ts/               # source, compiled to js/ via tsc
+    ├── js/               # generated output, checked in
     └── index.html
 ```
 
-設計方針:
+**Design principles**
 
-- フロントエンドに Vite / Nuxt のようなフレームワークを載せない。現状の規模では不要で、レンダリング問題の本質はフレームワークでは解決しない
-- Web Components も導入しない。Shadow DOM の恩恵より書き味のコストが勝る
-- 検索は Rust 側の tantivy + lindera。Web/JS 側ではやらない
+- No frontend framework (Vite / Nuxt / React). At this scale they buy nothing, and rendering problems are not framework problems.
+- No Web Components. Shadow DOM costs more than it returns here.
+- Search stays on the Rust side (Tantivy + lindera). The browser is not the right place for it.
 
-### データパス
+### Data paths
 
-| 種別 | パス |
+| Kind | Path |
 |---|---|
-| 読み込み | `~/.claude/history.jsonl`, `~/.claude/projects/**/{sessionId}.jsonl` |
-| 書き込み | `~/Library/Application Support/com.cyocun.claude-session-manager/archive.json` |
-| 設定 | `~/Library/Application Support/com.cyocun.claude-session-manager/settings.json` |
-| 検索 index | `~/Library/Application Support/com.cyocun.claude-session-manager/search-index/` |
+| Read | `~/.claude/history.jsonl`, `~/.claude/projects/**/{sessionId}.jsonl` |
+| Write | `~/Library/Application Support/com.cyocun.claude-session-manager/archive.json` |
+| Settings | `~/Library/Application Support/com.cyocun.claude-session-manager/settings.json` |
+| Search index | `~/Library/Application Support/com.cyocun.claude-session-manager/search-index/` |
 
-クラウド同期は一切行わない。アプリが外部通信するのは **アップデート確認のみ**。
+No cloud sync. The only outbound traffic is the update check.
 
 ---
 
-## 開発
+## Development
 
 ```bash
-# 依存インストール
 npm install
-
-# 開発起動（Tauri dev モード）
-npm run tauri:dev
-
-# フロントエンド型チェック
-npm run check:types
-
-# フロントエンドのみビルド
-npm run build:frontend
-
-# Rust テスト
-cd src-tauri && cargo test
+npm run tauri:dev          # launch in Tauri dev mode
+npm run check:types        # frontend type-check
+npm run build:frontend     # compile TS → JS only
+cd src-tauri && cargo test # Rust tests
 ```
 
-フロントエンドの TS を書き換えたら `npm run build:frontend` を走らせる（または `npm run tauri:dev` が裏で行う）。生成物 `frontend/js/**` は Git 管理下なのでコミットに含める。
+Rebuild the frontend (`npm run build:frontend`) whenever you touch TypeScript. The generated `frontend/js/**` is tracked in git and must be committed.
 
-## リリース
+## Release
 
-1. `src-tauri/Cargo.toml` と `src-tauri/tauri.conf.json` の `version` を揃えて bump
+1. Bump `version` in both `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`
 2. `git commit -am "Bump version to X.Y.Z"`
 3. `git tag vX.Y.Z && git push --follow-tags`
-4. `.github/workflows/release.yml` が macOS arm64 ビルド・署名・GitHub Releases への公開を自動化（8〜10 分）
+4. `.github/workflows/release.yml` builds, signs, and publishes the macOS arm64 bundle (~8–10 min)
 
-詳細な仕組みは [`CLAUDE.md`](CLAUDE.md) を参照。
+See [`CLAUDE.md`](CLAUDE.md) for the full contributor notes.
 
-## ライセンス
+## License
 
-Private (個人プロジェクト)
+Private (personal project). Not open for public use or redistribution.
