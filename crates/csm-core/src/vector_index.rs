@@ -220,19 +220,42 @@ impl VectorIndex {
         let _guard = IndexingGuard {
             flag: &self.is_indexing,
         };
+        self.index_from_history(None, true)
+    }
 
-        let session_map = collect_session_projects(None).map_err(|e| e.to_string())?;
+    /// 指定 session_id のみ再 index。update 呼び出し元は既に「変わった」ことを
+    /// 知っている前提なので、ファイルサイズ変化の確認はスキップして常に再 embed。
+    pub fn update_sessions(&self, session_ids: &[String]) -> Result<(), String> {
+        if self.is_indexing.load(Ordering::SeqCst) {
+            // 全 index build と被ったら skip (writer 取り合い防止)
+            return Ok(());
+        }
+        let id_set: HashSet<&String> = session_ids.iter().collect();
+        self.index_from_history(Some(&id_set), false).map(|_| ())
+    }
+
+    /// build_full_index と update_sessions の共通骨子。
+    /// `skip_unchanged` が true のとき、記録済みファイルサイズと一致するセッションは
+    /// embed を省略する。update_sessions は明示指定前提なので false を渡す。
+    fn index_from_history(
+        &self,
+        filter: Option<&HashSet<&String>>,
+        skip_unchanged: bool,
+    ) -> Result<usize, String> {
+        let session_map = collect_session_projects(filter).map_err(|e| e.to_string())?;
         let mut indexed = 0usize;
         for (session_id, project) in &session_map {
-            let Some(path) = find_session_file(session_id) else {
-                continue;
-            };
-            let size = match std::fs::metadata(&path) {
-                Ok(m) => m.len(),
-                Err(_) => continue,
-            };
-            if !self.needs_reindex(session_id, size) {
-                continue;
+            if skip_unchanged {
+                let Some(path) = find_session_file(session_id) else {
+                    continue;
+                };
+                let size = match std::fs::metadata(&path) {
+                    Ok(m) => m.len(),
+                    Err(_) => continue,
+                };
+                if !self.needs_reindex(session_id, size) {
+                    continue;
+                }
             }
             if let Err(e) = self.index_session(session_id, project) {
                 eprintln!("vector index: failed to index {}: {}", session_id, e);
@@ -242,22 +265,6 @@ impl VectorIndex {
         }
         self.save()?;
         Ok(indexed)
-    }
-
-    /// 指定 session_id の差分更新。主に新規会話が追加された場合に呼ぶ。
-    pub fn update_sessions(&self, session_ids: &[String]) -> Result<(), String> {
-        if self.is_indexing.load(Ordering::SeqCst) {
-            // 全 index build と被ったら skip (writer 取り合い防止)
-            return Ok(());
-        }
-        let id_set: HashSet<&String> = session_ids.iter().collect();
-        let session_map = collect_session_projects(Some(&id_set)).map_err(|e| e.to_string())?;
-        for (session_id, project) in &session_map {
-            if let Err(e) = self.index_session(session_id, project) {
-                eprintln!("vector index: failed to update {}: {}", session_id, e);
-            }
-        }
-        self.save()
     }
 
     pub fn save(&self) -> Result<(), String> {
@@ -302,47 +309,51 @@ pub fn build_chunks(
     let mut buf: Vec<&SearchableMessage> = Vec::new();
     let mut buf_chars: usize = 0;
 
-    let flush = |buf: &mut Vec<&SearchableMessage>,
-                 buf_chars: &mut usize,
-                 out: &mut Vec<PendingChunk>| {
-        if buf.is_empty() {
-            return;
-        }
-        let msg_start = buf.first().unwrap().message_index;
-        let msg_end = buf.last().unwrap().message_index;
-        let timestamp = buf.iter().map(|m| m.timestamp).max().unwrap_or(0);
-        let joined: String = buf
-            .iter()
-            .map(|m| m.content.as_str())
-            .collect::<Vec<_>>()
-            .join("\n---\n");
-        let snippet = first_chars(&joined, SNIPPET_CHARS);
-        out.push(PendingChunk {
-            session_id: session_id.to_string(),
-            project: project.to_string(),
-            msg_start,
-            msg_end,
-            text: joined,
-            snippet,
-            timestamp,
-        });
-        buf.clear();
-        *buf_chars = 0;
-    };
-
     for msg in msgs {
         let msg_chars = msg.content.chars().count();
         let starts_new_task = msg.msg_type == "user" && !buf.is_empty();
         let would_exceed = buf.len() >= MAX_CHUNK_MESSAGES
             || (buf_chars + msg_chars > MAX_CHUNK_CHARS && !buf.is_empty());
         if starts_new_task || would_exceed {
-            flush(&mut buf, &mut buf_chars, &mut out);
+            flush_chunk(&mut buf, &mut buf_chars, &mut out, session_id, project);
         }
         buf.push(msg);
         buf_chars += msg_chars;
     }
-    flush(&mut buf, &mut buf_chars, &mut out);
+    flush_chunk(&mut buf, &mut buf_chars, &mut out, session_id, project);
     out
+}
+
+fn flush_chunk(
+    buf: &mut Vec<&SearchableMessage>,
+    buf_chars: &mut usize,
+    out: &mut Vec<PendingChunk>,
+    session_id: &str,
+    project: &str,
+) {
+    if buf.is_empty() {
+        return;
+    }
+    let msg_start = buf.first().unwrap().message_index;
+    let msg_end = buf.last().unwrap().message_index;
+    let timestamp = buf.iter().map(|m| m.timestamp).max().unwrap_or(0);
+    let joined: String = buf
+        .iter()
+        .map(|m| m.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n---\n");
+    let snippet = first_chars(&joined, SNIPPET_CHARS);
+    out.push(PendingChunk {
+        session_id: session_id.to_string(),
+        project: project.to_string(),
+        msg_start,
+        msg_end,
+        text: joined,
+        snippet,
+        timestamp,
+    });
+    buf.clear();
+    *buf_chars = 0;
 }
 
 fn first_chars(s: &str, n: usize) -> String {

@@ -4,6 +4,21 @@ use csm_core::search::SearchIndex;
 use csm_core::vector_index::{VectorHit, VectorIndex, VectorIndexStatus};
 use std::sync::Arc;
 
+/// 重い同期処理を Tokio の worker に逃がす共通ヘルパー。
+/// embedding の forward pass は `&mut self` を要求する都合で blocking しか
+/// 書けず、Tauri の async コマンドからはこの経由でしか呼べない。
+async fn run_blocking<F, T, E>(f: F) -> Result<T, String>
+where
+    F: FnOnce() -> Result<T, E> + Send + 'static,
+    T: Send + 'static,
+    E: ToString + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn get_vector_index_status(state: tauri::State<'_, Arc<VectorIndex>>) -> VectorIndexStatus {
     state.status()
@@ -16,9 +31,7 @@ pub async fn build_vector_index(
     state: tauri::State<'_, Arc<VectorIndex>>,
 ) -> Result<usize, String> {
     let idx = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || idx.build_full_index())
-        .await
-        .map_err(|e| e.to_string())?
+    run_blocking(move || idx.build_full_index()).await
 }
 
 #[tauri::command]
@@ -27,9 +40,7 @@ pub async fn update_vector_index(
     session_ids: Vec<String>,
 ) -> Result<(), String> {
     let idx = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || idx.update_sessions(&session_ids))
-        .await
-        .map_err(|e| e.to_string())?
+    run_blocking(move || idx.update_sessions(&session_ids)).await
 }
 
 #[tauri::command]
@@ -40,9 +51,7 @@ pub async fn vector_search(
 ) -> Result<Vec<VectorHit>, String> {
     let limit = limit.unwrap_or(50);
     let idx = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || idx.search(&query, limit))
-        .await
-        .map_err(|e| e.to_string())?
+    run_blocking(move || idx.search(&query, limit)).await
 }
 
 /// BM25 と Vector を RRF で合流させたハイブリッド検索。
@@ -73,9 +82,8 @@ pub async fn hybrid_search(
 
     let idx = vector.inner().clone();
     let q = query.clone();
-    let vec_hits = tauri::async_runtime::spawn_blocking(move || idx.search(&q, per_source))
+    let vec_hits = run_blocking(move || idx.search(&q, per_source))
         .await
-        .map_err(|e| e.to_string())?
         .unwrap_or_default();
 
     Ok(rrf_merge(&bm25_hits, &vec_hits, limit))

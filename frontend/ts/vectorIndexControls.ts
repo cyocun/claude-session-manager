@@ -3,7 +3,7 @@
 // Phase D2 で検索バー周辺に正式に組み込む予定。
 
 import { createEl } from './dom.js';
-import type { EmbeddingModelStatus, VectorIndexStatus } from './types.js';
+import type { VectorIndexStatus } from './types.js';
 
 export type VectorIndexControlsDeps = {
   t: (key: string) => string;
@@ -11,41 +11,45 @@ export type VectorIndexControlsDeps = {
   onToast?: (msg: string) => void;
 };
 
+const WRAP_STYLE: Partial<CSSStyleDeclaration> = {
+  position: 'fixed',
+  bottom: '10px',
+  right: '10px',
+  zIndex: '50',
+  background: 'var(--bg-surface)',
+  border: '0.5px solid var(--border)',
+  borderRadius: '8px',
+  padding: '6px 10px',
+  fontSize: '11px',
+  color: 'var(--text-secondary)',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  boxShadow: '0 2px 8px rgba(0,0,0,.12)',
+};
+
+const BTN_STYLE: Partial<CSSStyleDeclaration> = {
+  fontSize: '11px',
+  padding: '3px 8px',
+  borderRadius: '6px',
+  border: '0.5px solid var(--border)',
+  background: 'var(--bg)',
+  color: 'var(--text)',
+  cursor: 'pointer',
+};
+
 export function createVectorIndexControls(deps: VectorIndexControlsDeps) {
   const { t, invoke, onToast } = deps;
 
   const wrap = createEl('div', { className: 'vector-index-controls' });
-  wrap.style.cssText = [
-    'position:fixed',
-    'bottom:10px',
-    'right:10px',
-    'z-index:50',
-    'background:var(--bg-surface)',
-    'border:0.5px solid var(--border)',
-    'border-radius:8px',
-    'padding:6px 10px',
-    'font-size:11px',
-    'color:var(--text-secondary)',
-    'display:flex',
-    'align-items:center',
-    'gap:8px',
-    'box-shadow:0 2px 8px rgba(0,0,0,.12)',
-  ].join(';');
+  Object.assign(wrap.style, WRAP_STYLE);
 
   const label = createEl('span', { textContent: t('vectorIndexIdle') });
   const btn = createEl('button', {
     textContent: t('vectorIndexBuildAction'),
     onClick: () => void triggerBuild(),
   }) as HTMLButtonElement;
-  btn.style.cssText = [
-    'font-size:11px',
-    'padding:3px 8px',
-    'border-radius:6px',
-    'border:0.5px solid var(--border)',
-    'background:var(--bg)',
-    'color:var(--text)',
-    'cursor:pointer',
-  ].join(';');
+  Object.assign(btn.style, BTN_STYLE);
 
   wrap.append(label, btn);
 
@@ -113,10 +117,6 @@ export function createVectorIndexControls(deps: VectorIndexControlsDeps) {
       polling = null;
     }
   }
-
-  // `EmbeddingModelStatus` は現状参照していないが、Phase D2 でローディング中
-  // 表示などに使う予定なので import を保持。
-  void (null as unknown as EmbeddingModelStatus);
 
   return { mount, unmount, refresh };
 }

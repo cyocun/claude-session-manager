@@ -2,39 +2,41 @@
 // 検索 pane の grid 構造には手を入れず、body 右下にフローティングで差し込む。
 // Phase D2 で検索バー周辺に正式に組み込む予定。
 import { createEl } from './dom.js';
+const WRAP_STYLE = {
+    position: 'fixed',
+    bottom: '10px',
+    right: '10px',
+    zIndex: '50',
+    background: 'var(--bg-surface)',
+    border: '0.5px solid var(--border)',
+    borderRadius: '8px',
+    padding: '6px 10px',
+    fontSize: '11px',
+    color: 'var(--text-secondary)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    boxShadow: '0 2px 8px rgba(0,0,0,.12)',
+};
+const BTN_STYLE = {
+    fontSize: '11px',
+    padding: '3px 8px',
+    borderRadius: '6px',
+    border: '0.5px solid var(--border)',
+    background: 'var(--bg)',
+    color: 'var(--text)',
+    cursor: 'pointer',
+};
 export function createVectorIndexControls(deps) {
     const { t, invoke, onToast } = deps;
     const wrap = createEl('div', { className: 'vector-index-controls' });
-    wrap.style.cssText = [
-        'position:fixed',
-        'bottom:10px',
-        'right:10px',
-        'z-index:50',
-        'background:var(--bg-surface)',
-        'border:0.5px solid var(--border)',
-        'border-radius:8px',
-        'padding:6px 10px',
-        'font-size:11px',
-        'color:var(--text-secondary)',
-        'display:flex',
-        'align-items:center',
-        'gap:8px',
-        'box-shadow:0 2px 8px rgba(0,0,0,.12)',
-    ].join(';');
+    Object.assign(wrap.style, WRAP_STYLE);
     const label = createEl('span', { textContent: t('vectorIndexIdle') });
     const btn = createEl('button', {
         textContent: t('vectorIndexBuildAction'),
         onClick: () => void triggerBuild(),
     });
-    btn.style.cssText = [
-        'font-size:11px',
-        'padding:3px 8px',
-        'border-radius:6px',
-        'border:0.5px solid var(--border)',
-        'background:var(--bg)',
-        'color:var(--text)',
-        'cursor:pointer',
-    ].join(';');
+    Object.assign(btn.style, BTN_STYLE);
     wrap.append(label, btn);
     let polling = null;
     async function refresh() {
@@ -100,8 +102,5 @@ export function createVectorIndexControls(deps) {
             polling = null;
         }
     }
-    // `EmbeddingModelStatus` は現状参照していないが、Phase D2 でローディング中
-    // 表示などに使う予定なので import を保持。
-    void null;
     return { mount, unmount, refresh };
 }

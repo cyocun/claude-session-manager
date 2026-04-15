@@ -10,8 +10,31 @@ use commands::{
     archive, clipboard, embedding as embedding_cmd, projects, pty, resume, search as search_cmd,
     sessions, settings, updater, vector_search as vector_cmd,
 };
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
+
+/// データディレクトリ配下の永続化ストレージを使う index の初期化ヘルパー。
+/// 失敗 (スキーマ不整合・破損など) したら当該ディレクトリを一度消してから
+/// もう一度 init を呼び直す。2 回目で失敗するなら本当に壊れているので panic。
+fn init_with_retry<T, E, F>(path: PathBuf, label: &str, init: F) -> Arc<T>
+where
+    F: Fn(PathBuf) -> Result<T, E>,
+    E: std::fmt::Display,
+{
+    match init(path.clone()) {
+        Ok(v) => Arc::new(v),
+        Err(e) => {
+            eprintln!("Failed to init {}: {}", label, e);
+            let _ = std::fs::remove_dir_all(&path);
+            Arc::new(
+                init(path).unwrap_or_else(|e| {
+                    panic!("Failed to init {} after cleanup: {}", label, e)
+                }),
+            )
+        }
+    }
+}
 
 #[tauri::command]
 fn sync_menu_state(
@@ -102,49 +125,34 @@ fn main() {
             menu::setup_menu(app.handle())?;
             tray::setup_tray(app.handle())?;
 
-            // Initialize search index
             let data_dir = dirs::data_dir()
                 .unwrap_or_default()
                 .join("com.cyocun.claude-session-manager");
-            let index_dir = data_dir.join("search-index");
-            let search_index = match csm_core::search::SearchIndex::new(index_dir) {
-                Ok(idx) => Arc::new(idx),
-                Err(e) => {
-                    eprintln!("Failed to create search index: {}", e);
-                    // Try again after removing corrupted index
-                    let index_dir = data_dir.join("search-index");
-                    let _ = std::fs::remove_dir_all(&index_dir);
-                    Arc::new(
-                        csm_core::search::SearchIndex::new(index_dir)
-                            .expect("Failed to create search index after cleanup"),
-                    )
-                }
-            };
+
+            let search_index: Arc<csm_core::search::SearchIndex> = init_with_retry(
+                data_dir.join("search-index"),
+                "search index",
+                csm_core::search::SearchIndex::new,
+            );
             app.manage(pty::PtyState::new());
             app.manage(search_index.clone());
 
             // Embedding engine: モデル本体は初回 DL 要求時に HF から取得する
-            let embedding_dir = data_dir.join("embedding-models");
             let embedding_engine =
-                Arc::new(csm_core::embedding::EmbeddingEngine::new(embedding_dir));
+                Arc::new(csm_core::embedding::EmbeddingEngine::new(
+                    data_dir.join("embedding-models"),
+                ));
             app.manage(embedding_engine.clone());
 
             // Vector index: 起動時は disk 上の persisted データを読むだけ。
             // 実 embedding の構築は build_vector_index コマンドで明示的に走らせる。
-            let vector_dir = data_dir.join("vector-index");
-            let vector_index = match csm_core::vector_index::VectorIndex::new(
-                vector_dir.clone(),
-                embedding_engine.clone(),
-            ) {
-                Ok(v) => Arc::new(v),
-                Err(e) => {
-                    eprintln!("Failed to init vector index: {}", e);
-                    let _ = std::fs::remove_dir_all(&vector_dir);
-                    Arc::new(
-                        csm_core::vector_index::VectorIndex::new(vector_dir, embedding_engine)
-                            .expect("Failed to init vector index after cleanup"),
-                    )
-                }
+            let vector_index: Arc<csm_core::vector_index::VectorIndex> = {
+                let engine = embedding_engine.clone();
+                init_with_retry(
+                    data_dir.join("vector-index"),
+                    "vector index",
+                    move |p| csm_core::vector_index::VectorIndex::new(p, engine.clone()),
+                )
             };
             app.manage(vector_index);
 

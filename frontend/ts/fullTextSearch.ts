@@ -30,17 +30,12 @@ export type FullTextSearchDeps = {
   onExit: () => void;
 };
 
-/// HybridHit はセッション単位集約のため msg_type を持たない。
-/// 既存 renderResults が msgType を参照するので、バッジから Role を推測して埋める。
-/// BM25 にヒットしていれば元メッセージの msg_type は分からないが「コンテキストあり」
-/// → user/assistant どちらの可能性もあるので 'user' にフォールバックしつつ、
-/// matchedBy をそのまま透過させて UI 側で判別できるようにする。
 function hybridToSearchHit(h: HybridHit): SearchHit {
   return {
     sessionId: h.sessionId,
     project: h.project,
     snippet: h.snippet,
-    msgType: 'user',
+    msgType: h.msgType,
     messageIndex: h.messageIndex,
     timestamp: h.timestamp,
     score: h.score,
@@ -173,40 +168,31 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     let results: SearchHit[] = [];
     let resolvedQuery = trimmedQuery;
     const isHybrid = requestMode === 'similar';
-    try {
+    // Phase D では time/role フィルタは hybrid_search 未対応なので、
+    // hybrid 時は project フィルタのみ渡す。BM25 は従来通り全フィルタ対応。
+    const runQuery = async (q: string): Promise<SearchHit[]> => {
       if (isHybrid) {
-        // Hybrid (vector + BM25 via RRF). Phase D では time/role フィルタは未対応、
-        // project フィルタのみ backend へ渡す。
         const hybrid: HybridHit[] = await invoke('hybrid_search', {
-          query: trimmedQuery,
+          query: q,
           limit: 30,
           project: getSelectedProject() || null,
         }) || [];
-        results = hybrid.map(hybridToSearchHit);
-      } else {
-        results = await invoke('search_sessions', {
-          query: trimmedQuery,
-          ...searchArgs,
-        }) || [];
+        return hybrid.map(hybridToSearchHit);
       }
+      return (await invoke('search_sessions', {
+        query: q,
+        ...searchArgs,
+      })) || [];
+    };
+
+    try {
+      results = await runQuery(trimmedQuery);
     } catch (error) {
       console.warn('[search] primary query failed, retrying with normalized query', error);
       const retryQuery = normalizeSearchQuery(trimmedQuery);
       if (retryQuery.length >= 2 && retryQuery !== trimmedQuery) {
         try {
-          if (isHybrid) {
-            const hybrid: HybridHit[] = await invoke('hybrid_search', {
-              query: retryQuery,
-              limit: 30,
-              project: getSelectedProject() || null,
-            }) || [];
-            results = hybrid.map(hybridToSearchHit);
-          } else {
-            results = await invoke('search_sessions', {
-              query: retryQuery,
-              ...searchArgs,
-            }) || [];
-          }
+          results = await runQuery(retryQuery);
           resolvedQuery = retryQuery;
         } catch (retryError) {
           console.error('[search] retry query failed', retryError);

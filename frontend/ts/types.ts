@@ -66,6 +66,8 @@ export type HybridHit = {
   score: number;
   timestamp: number;
   messageIndex: number;
+  // BM25 由来なら "user" / "assistant"、ベクトル単独ヒットは "hybrid"。
+  msgType: string;
   matchedBy: string[];
   contextBefore?: string;
   contextAfter?: string;

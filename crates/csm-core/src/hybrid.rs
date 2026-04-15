@@ -9,7 +9,7 @@
 //! 揃える方が UI 上のノイズが少ない。将来メッセージ粒度で合わせたく
 //! なったら、この関数を差し替えればよい。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
@@ -27,8 +27,10 @@ pub struct HybridHit {
     pub score: f32,
     pub timestamp: u64,
     pub message_index: u32,
-    /// どの経路でヒットしたか ("bm25" / "vector" / 両方)。
-    /// UI でバッジ表示するために保持。
+    /// BM25 由来なら元メッセージの "user" / "assistant"。
+    /// ベクトル単独ヒットは "hybrid" (chunk 粒度で role が特定できない)。
+    pub msg_type: String,
+    /// どの経路でヒットしたか ("bm25" / "vector" / 両方)。UI バッジ用。
     pub matched_by: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_before: Option<String>,
@@ -45,13 +47,11 @@ pub struct HybridHit {
 pub fn rrf_merge(bm25: &[SearchHit], vector: &[VectorHit], limit: usize) -> Vec<HybridHit> {
     let mut merged: HashMap<String, HybridHit> = HashMap::new();
 
-    // BM25: session ごとに最上位ランクだけを採用
-    let mut seen_bm25: HashMap<&str, usize> = HashMap::new();
+    // BM25: session の初出ランクだけを採用 (下位を加算すると語彙の重複で過剰評価)。
+    // HashSet::insert の戻り値で初出/重複を判定し 1 パスで処理する。
+    let mut seen_bm25: HashSet<&str> = HashSet::new();
     for (rank, hit) in bm25.iter().enumerate() {
-        seen_bm25.entry(&hit.session_id).or_insert(rank);
-    }
-    for (rank, hit) in bm25.iter().enumerate() {
-        if seen_bm25.get(hit.session_id.as_str()) != Some(&rank) {
+        if !seen_bm25.insert(hit.session_id.as_str()) {
             continue;
         }
         let score = 1.0 / (RRF_K + rank as f32);
@@ -64,6 +64,7 @@ pub fn rrf_merge(bm25: &[SearchHit], vector: &[VectorHit], limit: usize) -> Vec<
                 score,
                 timestamp: hit.timestamp,
                 message_index: hit.message_index,
+                msg_type: hit.msg_type.clone(),
                 matched_by: vec!["bm25".to_string()],
                 context_before: hit.context_before.clone(),
                 context_after: hit.context_after.clone(),
@@ -71,13 +72,10 @@ pub fn rrf_merge(bm25: &[SearchHit], vector: &[VectorHit], limit: usize) -> Vec<
         );
     }
 
-    // Vector: 既存エントリに加算、なければ新規
-    let mut seen_vec: HashMap<&str, usize> = HashMap::new();
+    // Vector: 既存があれば加算、なければ新規 ("hybrid" を msg_type に入れる)。
+    let mut seen_vec: HashSet<&str> = HashSet::new();
     for (rank, hit) in vector.iter().enumerate() {
-        seen_vec.entry(&hit.session_id).or_insert(rank);
-    }
-    for (rank, hit) in vector.iter().enumerate() {
-        if seen_vec.get(hit.session_id.as_str()) != Some(&rank) {
+        if !seen_vec.insert(hit.session_id.as_str()) {
             continue;
         }
         let score = 1.0 / (RRF_K + rank as f32);
@@ -96,6 +94,7 @@ pub fn rrf_merge(bm25: &[SearchHit], vector: &[VectorHit], limit: usize) -> Vec<
                         score,
                         timestamp: hit.timestamp,
                         message_index: hit.msg_start,
+                        msg_type: "hybrid".to_string(),
                         matched_by: vec!["vector".to_string()],
                         context_before: None,
                         context_after: None,
@@ -147,11 +146,13 @@ mod tests {
 
     #[test]
     fn session_matched_by_both_beats_single_path() {
+        // BM25 単独 (rank 0) = 1/60 よりも、BM25 rank 1 + Vector rank 0 =
+        // 1/61 + 1/60 のほうが高スコアになることを確認。
+        // 両経路ヒットのセッションだけを Vector に入れて tie-breaking を避ける。
         let bm25 = vec![bm25("a", "a"), bm25("b", "b"), bm25("c", "c")];
-        let vec_hits = vec![vec_hit("b"), vec_hit("a"), vec_hit("d")];
+        let vec_hits = vec![vec_hit("b")];
         let merged = rrf_merge(&bm25, &vec_hits, 10);
 
-        // b は BM25 rank 1, Vector rank 0 で両方からヒット → 最上位のはず
         assert_eq!(merged[0].session_id, "b");
         assert_eq!(merged[0].matched_by.len(), 2);
     }
@@ -170,6 +171,19 @@ mod tests {
         let merged = rrf_merge(&[], &[vec_hit("a")], 10);
         assert_eq!(merged[0].snippet, "vec snippet");
         assert_eq!(merged[0].matched_by, vec!["vector".to_string()]);
+    }
+
+    #[test]
+    fn bm25_hit_preserves_msg_type() {
+        let merged = rrf_merge(&[bm25("a", "snip")], &[], 10);
+        // fixture bm25() は msg_type="user" を入れている。
+        assert_eq!(merged[0].msg_type, "user");
+    }
+
+    #[test]
+    fn vector_only_hit_uses_hybrid_msg_type() {
+        let merged = rrf_merge(&[], &[vec_hit("a")], 10);
+        assert_eq!(merged[0].msg_type, "hybrid");
     }
 
     #[test]

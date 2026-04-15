@@ -504,13 +504,25 @@ export function createSearchView(deps: SearchViewDeps) {
   }
 
   function buildResultRow(hit: SearchHit): HTMLElement {
+    // Hybrid (msgType === 'hybrid') はメッセージ粒度ではないので user/assistant の
+    // 見た目から外し、ラベルも空にしておく (matchedBy バッジが識別子を兼ねる)。
+    const roleClass = hit.msgType === 'user'
+      ? 'user'
+      : hit.msgType === 'assistant'
+        ? 'assistant'
+        : 'hybrid';
     const row = createEl('div', {
-      className: `search-result-row ${hit.msgType === 'user' ? 'user' : 'assistant'}`,
+      className: `search-result-row ${roleClass}`,
     });
 
+    const roleLabel = hit.msgType === 'user'
+      ? 'USER'
+      : hit.msgType === 'assistant'
+        ? 'AI'
+        : '';
     const role = createEl('div', {
       className: 'srr-role',
-      textContent: hit.msgType === 'user' ? 'USER' : 'AI',
+      textContent: roleLabel,
     });
 
     const main = createEl('div', { className: 'srr-main' });
