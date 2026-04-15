@@ -9,7 +9,16 @@
 
 import { createEl, setHighlight } from './dom.js';
 import { sanitizeSnippet } from './searchUtils.js';
-import type { SearchHit, SearchMode, DetailMessage } from './types.js';
+import type { SearchHit, SearchMode, DetailMessage, SearchSort } from './types.js';
+
+export type RoleFilter = 'all' | 'user' | 'assistant';
+export type TimePreset = 'all' | '24h' | '7d' | '30d';
+
+export type SearchFilters = {
+  sort: SearchSort;
+  role: RoleFilter;
+  time: TimePreset;
+};
 
 export type SearchViewDeps = {
   byId: <T extends HTMLElement = HTMLElement>(id: string) => T;
@@ -23,6 +32,9 @@ export type SearchViewDeps = {
   openSession: (sessionId: string, messageIndex: number) => void | Promise<void>;
   // Called when the user requests exit (Esc with cleared query).
   onRequestExit: () => void;
+  // Called when filter state changes so the query can be re-run with the
+  // new filters. Debounce is handled by the caller (fullTextSearch).
+  onFiltersChanged: () => void;
 };
 
 type Row = { el: HTMLElement; hit: SearchHit };
@@ -37,17 +49,62 @@ type PreviewResponse = {
 };
 
 const PREVIEW_WINDOW = 3;
+const FILTERS_STORAGE_KEY = 'csm-search-filters';
+
+const DEFAULT_FILTERS: SearchFilters = {
+  sort: 'relevance',
+  role: 'all',
+  time: 'all',
+};
+
+function loadFilters(): SearchFilters {
+  try {
+    const raw = localStorage.getItem(FILTERS_STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_FILTERS };
+    const parsed = JSON.parse(raw) as Partial<SearchFilters>;
+    // Whitelist each field — don't trust localStorage past a version bump.
+    const sort: SearchSort = (['relevance', 'newest', 'oldest', 'relevance_recent']
+      .includes(parsed.sort as string) ? parsed.sort : 'relevance') as SearchSort;
+    const role: RoleFilter = (['all', 'user', 'assistant']
+      .includes(parsed.role as string) ? parsed.role : 'all') as RoleFilter;
+    const time: TimePreset = (['all', '24h', '7d', '30d']
+      .includes(parsed.time as string) ? parsed.time : 'all') as TimePreset;
+    return { sort, role, time };
+  } catch {
+    return { ...DEFAULT_FILTERS };
+  }
+}
+
+function saveFilters(filters: SearchFilters): void {
+  try {
+    localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(filters));
+  } catch {
+    // localStorage full or disabled — just drop the write.
+  }
+}
+
+function timePresetToFromMs(preset: TimePreset): number | undefined {
+  if (preset === 'all') return undefined;
+  const now = Date.now();
+  switch (preset) {
+    case '24h': return now - 24 * 60 * 60 * 1000;
+    case '7d': return now - 7 * 24 * 60 * 60 * 1000;
+    case '30d': return now - 30 * 24 * 60 * 60 * 1000;
+    default: return undefined;
+  }
+}
 
 export function createSearchView(deps: SearchViewDeps) {
   const {
     byId, byIdOptional, t, invoke,
     getSessions, projectDisplayName,
-    openSession, onRequestExit,
+    openSession, onRequestExit, onFiltersChanged,
   } = deps;
 
   let active = false;
   let rows: Row[] = [];
   let activeIdx = -1;
+  let filters: SearchFilters = loadFilters();
   let previewSeq = 0;
   let lastPreviewSessionId: string | null = null;
   let lastPreviewMessageIndex = -1;
@@ -68,7 +125,126 @@ export function createSearchView(deps: SearchViewDeps) {
       detailPane.style.display = 'none';
     }
     searchPane.style.display = 'grid';
+    renderFilterBar();
     renderEmptyPreview();
+  }
+
+  function getFilters(): SearchFilters {
+    return { ...filters };
+  }
+
+  function getFilterPayload(): {
+    timeRange?: { from?: number; to?: number };
+    msgTypes?: string[];
+    sort: SearchSort;
+  } {
+    const payload: { timeRange?: { from?: number; to?: number }; msgTypes?: string[]; sort: SearchSort } = {
+      sort: filters.sort,
+    };
+    const from = timePresetToFromMs(filters.time);
+    if (from !== undefined) {
+      payload.timeRange = { from };
+    }
+    if (filters.role !== 'all') {
+      payload.msgTypes = [filters.role];
+    }
+    return payload;
+  }
+
+  function setFilter<K extends keyof SearchFilters>(key: K, value: SearchFilters[K]): void {
+    if (filters[key] === value) return;
+    filters = { ...filters, [key]: value };
+    saveFilters(filters);
+    renderFilterBar();
+    onFiltersChanged();
+  }
+
+  function resetFilters(): void {
+    if (
+      filters.sort === DEFAULT_FILTERS.sort &&
+      filters.role === DEFAULT_FILTERS.role &&
+      filters.time === DEFAULT_FILTERS.time
+    ) return;
+    filters = { ...DEFAULT_FILTERS };
+    saveFilters(filters);
+    renderFilterBar();
+    onFiltersChanged();
+  }
+
+  function makeSegmented<V extends string>(
+    label: string,
+    options: Array<{ value: V; label: string }>,
+    current: V,
+    onChange: (value: V) => void,
+  ): HTMLElement {
+    const group = createEl('div', { className: 'search-filter-group' });
+    const labelEl = createEl('span', {
+      className: 'search-filter-label',
+      textContent: label,
+    });
+    const seg = createEl('div', { className: 'mac-segmented search-filter-seg' });
+    for (const opt of options) {
+      const btn = createEl('button', {
+        className: 'mac-segmented-btn' + (opt.value === current ? ' active' : ''),
+        textContent: opt.label,
+        onClick: () => onChange(opt.value),
+      });
+      seg.appendChild(btn);
+    }
+    group.append(labelEl, seg);
+    return group;
+  }
+
+  function renderFilterBar(): void {
+    const bar = byId<HTMLElement>('searchFilterBar');
+    bar.replaceChildren();
+
+    bar.appendChild(makeSegmented<SearchSort>(
+      t('searchFilterSort'),
+      [
+        { value: 'relevance', label: t('searchSortRelevance') },
+        { value: 'newest', label: t('searchSortNewest') },
+        { value: 'oldest', label: t('searchSortOldest') },
+        { value: 'relevance_recent', label: t('searchSortRelevanceRecent') },
+      ],
+      filters.sort,
+      (v) => setFilter('sort', v),
+    ));
+
+    bar.appendChild(makeSegmented<RoleFilter>(
+      t('searchFilterRole'),
+      [
+        { value: 'all', label: t('searchRoleAll') },
+        { value: 'user', label: t('searchRoleUser') },
+        { value: 'assistant', label: t('searchRoleAssistant') },
+      ],
+      filters.role,
+      (v) => setFilter('role', v),
+    ));
+
+    bar.appendChild(makeSegmented<TimePreset>(
+      t('searchFilterTime'),
+      [
+        { value: 'all', label: t('searchTimeAll') },
+        { value: '24h', label: t('searchTime24h') },
+        { value: '7d', label: t('searchTime7d') },
+        { value: '30d', label: t('searchTime30d') },
+      ],
+      filters.time,
+      (v) => setFilter('time', v),
+    ));
+
+    const anyActive = filters.sort !== DEFAULT_FILTERS.sort
+      || filters.role !== DEFAULT_FILTERS.role
+      || filters.time !== DEFAULT_FILTERS.time;
+    if (anyActive) {
+      const reset = createEl('button', {
+        className: 'search-filter-reset',
+        textContent: t('searchFilterReset'),
+        onClick: () => resetFilters(),
+      });
+      bar.appendChild(reset);
+    }
   }
 
   function exit(): void {
@@ -428,5 +604,7 @@ export function createSearchView(deps: SearchViewDeps) {
     exit,
     renderResults,
     handleKeyDown,
+    getFilters,
+    getFilterPayload,
   };
 }

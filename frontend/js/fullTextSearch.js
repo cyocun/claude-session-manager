@@ -75,10 +75,16 @@ export function createFullTextSearchController(deps) {
         }
         // Show a loading affordance via an empty render; final results overwrite.
         searchView.renderResults([], requestMode, searchIndexReady, trimmedQuery);
+        const filterPayload = searchView.getFilterPayload();
         const searchArgs = {
             project: getSelectedProject() || null,
             limit: requestMode === 'similar' ? 80 : 50,
+            sort: filterPayload.sort,
         };
+        if (filterPayload.timeRange)
+            searchArgs.timeRange = filterPayload.timeRange;
+        if (filterPayload.msgTypes)
+            searchArgs.msgTypes = filterPayload.msgTypes;
         let results = [];
         let resolvedQuery = trimmedQuery;
         try {
@@ -127,6 +133,21 @@ export function createFullTextSearchController(deps) {
         // Force-perform to short-circuit into the "empty query" exit path.
         void perform('');
     }
+    // Re-run the search with the current input value. Used by the filter bar:
+    // changing a chip doesn't touch the query itself, but we need to fetch again
+    // with the new filter payload. Debounces via a shorter delay than onInput
+    // since there's no typing involved.
+    let rerunTimer = null;
+    function rerun() {
+        if (!searchView.isActive())
+            return;
+        const search = byId('search');
+        if (rerunTimer)
+            clearTimeout(rerunTimer);
+        rerunTimer = setTimeout(() => {
+            void perform(search.value);
+        }, 150);
+    }
     function bindInputEvents(inputEl, clearBtn) {
         inputEl.addEventListener('input', () => {
             onSearchInput();
@@ -148,5 +169,6 @@ export function createFullTextSearchController(deps) {
         clear,
         bindInputEvents,
         getActiveResolvedQuery,
+        rerun,
     };
 }

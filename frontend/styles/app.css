@@ -677,6 +677,24 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
       overflow-y: auto;
     }
 
+    /* Search mode: filter bar chips */
+    .search-filter-group {
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .search-filter-label {
+      font-size: 10px; color: var(--text-faint);
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .search-filter-seg .mac-segmented-btn {
+      padding: 2px 8px; font-size: 11px;
+    }
+    .search-filter-reset {
+      margin-left: auto;
+      background: none; border: none; color: var(--accent);
+      font-size: 11px; padding: 2px 4px; cursor: default;
+    }
+    .search-filter-reset:hover { text-decoration: underline; }
+
     /* Search mode: result list + preview layout */
     #searchResultList {
       padding: 4px 0 16px;

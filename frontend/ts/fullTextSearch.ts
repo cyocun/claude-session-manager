@@ -1,11 +1,18 @@
 import { normalizeSearchQuery, parseSearchQuery } from './searchUtils.js';
-import type { SearchHit, SearchMode } from './types.js';
+import type { SearchHit, SearchMode, SearchSort } from './types.js';
+
+export type SearchFilterPayload = {
+  timeRange?: { from?: number; to?: number };
+  msgTypes?: string[];
+  sort: SearchSort;
+};
 
 export type SearchViewApi = {
   enter: () => void;
   exit: () => void;
   isActive: () => boolean;
   renderResults: (results: SearchHit[], mode: SearchMode, indexReady: boolean, query: string) => void;
+  getFilterPayload: () => SearchFilterPayload;
 };
 
 export type FullTextSearchDeps = {
@@ -115,10 +122,14 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     // Show a loading affordance via an empty render; final results overwrite.
     searchView.renderResults([], requestMode, searchIndexReady, trimmedQuery);
 
-    const searchArgs = {
+    const filterPayload = searchView.getFilterPayload();
+    const searchArgs: Record<string, unknown> = {
       project: getSelectedProject() || null,
       limit: requestMode === 'similar' ? 80 : 50,
+      sort: filterPayload.sort,
     };
+    if (filterPayload.timeRange) searchArgs.timeRange = filterPayload.timeRange;
+    if (filterPayload.msgTypes) searchArgs.msgTypes = filterPayload.msgTypes;
     let results: SearchHit[] = [];
     let resolvedQuery = trimmedQuery;
     try {
@@ -163,6 +174,20 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     void perform('');
   }
 
+  // Re-run the search with the current input value. Used by the filter bar:
+  // changing a chip doesn't touch the query itself, but we need to fetch again
+  // with the new filter payload. Debounces via a shorter delay than onInput
+  // since there's no typing involved.
+  let rerunTimer: ReturnType<typeof setTimeout> | null = null;
+  function rerun(): void {
+    if (!searchView.isActive()) return;
+    const search = byId('search') as HTMLInputElement;
+    if (rerunTimer) clearTimeout(rerunTimer);
+    rerunTimer = setTimeout(() => {
+      void perform(search.value);
+    }, 150);
+  }
+
   function bindInputEvents(inputEl: HTMLInputElement, clearBtn: HTMLElement): void {
     inputEl.addEventListener('input', () => {
       onSearchInput();
@@ -185,5 +210,6 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     clear,
     bindInputEvents,
     getActiveResolvedQuery,
+    rerun,
   };
 }

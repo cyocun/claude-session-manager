@@ -122,6 +122,11 @@ const searchView = createSearchView({
         // User pressed Esc with the search input focused — let the shortcut layer
         // clear the input; no direct exit here.
     },
+    onFiltersChanged: () => {
+        // Filter bar chip changed — re-run with the current query. fullTextSearch
+        // debounces the actual invoke.
+        fullTextSearch.rerun();
+    },
 });
 const fullTextSearch = createFullTextSearchController({
     byId,
@@ -135,6 +140,7 @@ const fullTextSearch = createFullTextSearchController({
         exit: () => searchView.exit(),
         isActive: () => searchView.isActive(),
         renderResults: (results, mode, indexReady, query) => searchView.renderResults(results, mode, indexReady, query),
+        getFilterPayload: () => searchView.getFilterPayload(),
     },
     onExit: () => {
         // Search pane is already hidden by searchView.exit(); nothing to repaint —
