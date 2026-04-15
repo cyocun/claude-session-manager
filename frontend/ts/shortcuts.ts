@@ -7,6 +7,7 @@ export type ShortcutsDeps = {
   byIdOptional: <T extends HTMLElement>(id: string) => T | null;
   fullTextSearch: { clear: () => void };
   chatSearch: { clear: () => void; next: () => void; prev: () => void };
+  isSearchMode: () => boolean;
   getSelectedSession: () => string | null;
   getSelectedProject: () => string | null;
   setProjectFilter: (path: string | null) => void;
@@ -19,7 +20,7 @@ export type ShortcutsDeps = {
 export function initShortcuts(deps: ShortcutsDeps): void {
   const {
     byId, byIdOptional,
-    fullTextSearch, chatSearch,
+    fullTextSearch, chatSearch, isSearchMode,
     getSelectedSession, getSelectedProject, setProjectFilter,
     toggleTerminal,
     focusFirstSession, focusLastSession,
@@ -85,7 +86,7 @@ export function initShortcuts(deps: ShortcutsDeps): void {
       return;
     }
 
-    // Escape: cascading close — modal > chat-search input > global-search input > project filter
+    // Escape: cascading close — modal > chat-search input > global-search input > search mode > project filter
     if (e.key === 'Escape') {
       if (isModalOpen()) return; // modal owns its own Escape
       if (activeIsTextInput) {
@@ -99,6 +100,13 @@ export function initShortcuts(deps: ShortcutsDeps): void {
           (active as HTMLInputElement).blur();
           return;
         }
+        return;
+      }
+      // Focus is elsewhere (e.g. user clicked a search result). Escape should
+      // still dismiss an active search before falling through to project filter.
+      if (isSearchMode()) {
+        e.preventDefault();
+        fullTextSearch.clear();
         return;
       }
       if (getSelectedProject()) {

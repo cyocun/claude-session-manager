@@ -1,9 +1,7 @@
 import { normalizeSearchQuery, parseSearchQuery } from './searchUtils.js';
-import { renderSearchResults, renderLoading } from './searchResultRenderer.js';
 export function createFullTextSearchController(deps) {
-    const { byId, t, getLang, getSessions, getSelectedProject, setProjectFilter, resolveProjectPath, projectDisplayName, invoke, renderSessions, showDetail, setSelectedSession, chatSearch, } = deps;
+    const { byId, t, getSelectedProject, setProjectFilter, resolveProjectPath, invoke, searchView, onExit, } = deps;
     let searchMode = 'fulltext';
-    let searchResults = [];
     let activeQuery = '';
     let activeResolvedQuery = '';
     let activeSearchMode = 'fulltext';
@@ -12,6 +10,9 @@ export function createFullTextSearchController(deps) {
     let searchRequestSeq = 0;
     function getMode() {
         return searchMode;
+    }
+    function getActiveResolvedQuery() {
+        return activeResolvedQuery;
     }
     function isSearchActive() {
         return activeQuery.length >= 2;
@@ -56,17 +57,24 @@ export function createFullTextSearchController(deps) {
     async function perform(query) {
         const trimmedQuery = query.trim();
         if (!trimmedQuery || trimmedQuery.length < 2) {
+            const wasActive = activeQuery.length >= 2;
             activeQuery = '';
             activeResolvedQuery = '';
-            searchResults = [];
-            renderSessions();
+            if (wasActive && searchView.isActive()) {
+                searchView.exit();
+                onExit();
+            }
             return;
         }
         const requestMode = searchMode;
         const requestSeq = ++searchRequestSeq;
         activeQuery = trimmedQuery;
         activeSearchMode = requestMode;
-        renderLoading(byId('sessionList'), searchIndexReady, t);
+        if (!searchView.isActive()) {
+            searchView.enter();
+        }
+        // Show a loading affordance via an empty render; final results overwrite.
+        searchView.renderResults([], requestMode, searchIndexReady, trimmedQuery);
         const searchArgs = {
             project: getSelectedProject() || null,
             limit: requestMode === 'similar' ? 80 : 50,
@@ -104,30 +112,20 @@ export function createFullTextSearchController(deps) {
         if (activeQuery !== trimmedQuery)
             return;
         activeResolvedQuery = resolvedQuery;
-        searchResults = results;
-        const rendererDeps = {
-            byId,
-            t,
-            getLang,
-            getSessions,
-            projectDisplayName,
-            invoke,
-            showDetail,
-            setSelectedSession,
-            chatSearch,
-            getActiveResolvedQuery: () => activeResolvedQuery,
-            getSearchInputValue: () => byId('search').value.trim(),
-        };
-        renderSearchResults(searchResults, activeSearchMode, searchIndexReady, rendererDeps);
+        searchView.renderResults(results, activeSearchMode, searchIndexReady, resolvedQuery);
     }
     function clear() {
         const search = byId('search');
         const clearBtn = byId('searchClearBtn');
-        if (!search.value)
+        if (!search.value && !searchView.isActive())
             return;
         search.value = '';
-        clearBtn.style.display = 'none';
-        onSearchInput();
+        if (clearBtn)
+            clearBtn.style.display = 'none';
+        if (fulltextSearchTimer)
+            clearTimeout(fulltextSearchTimer);
+        // Force-perform to short-circuit into the "empty query" exit path.
+        void perform('');
     }
     function bindInputEvents(inputEl, clearBtn) {
         inputEl.addEventListener('input', () => {
@@ -149,5 +147,6 @@ export function createFullTextSearchController(deps) {
         perform,
         clear,
         bindInputEvents,
+        getActiveResolvedQuery,
     };
 }

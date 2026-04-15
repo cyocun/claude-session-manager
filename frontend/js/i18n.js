@@ -112,6 +112,11 @@ export const I18N = {
         chatFilterAI: 'AI',
         openTerminal: 'ターミナル',
         closeTerminal: 'ターミナルを閉じる',
+        searchPreviewEmpty: '結果をホバーまたは選択するとここにプレビューが表示されます',
+        searchOpenSession: 'セッションを開く',
+        searchPreviewMoreBefore: '前に{n}件',
+        searchPreviewMoreAfter: '後に{n}件',
+        searchResultsSummary: '{n}件の結果',
     },
     en: {
         searchPlaceholder: 'Search...',
@@ -226,6 +231,11 @@ export const I18N = {
         chatFilterAI: 'AI',
         openTerminal: 'Terminal',
         closeTerminal: 'Close Terminal',
+        searchPreviewEmpty: 'Hover or select a result to preview it here',
+        searchOpenSession: 'Open session',
+        searchPreviewMoreBefore: '{n} earlier',
+        searchPreviewMoreAfter: '{n} later',
+        searchResultsSummary: '{n} results',
     },
 };
 export function detectLang() {

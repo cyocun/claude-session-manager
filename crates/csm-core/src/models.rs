@@ -256,6 +256,20 @@ pub struct SessionDetail {
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct SessionMessagesAround {
+    pub session_id: String,
+    pub project: String,
+    // Index of the first returned message in the session's full message list.
+    pub start_index: u32,
+    // Index of the focus message (hit) within the returned slice.
+    pub focus_offset: u32,
+    // Total number of messages in the session (for "N more before/after" hints).
+    pub total: u32,
+    pub messages: Vec<Message>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct Message {
     #[serde(rename = "type")]
     pub msg_type: String,
