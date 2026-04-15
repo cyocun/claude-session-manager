@@ -1,6 +1,6 @@
 import { normalizeSearchQuery, parseSearchQuery } from './searchUtils.js';
 import { searchTelemetry } from './searchTelemetry.js';
-import type { SearchHit, SearchMode, SearchSort } from './types.js';
+import type { HybridHit, SearchHit, SearchMode, SearchSort } from './types.js';
 
 export type SearchFilterPayload = {
   timeRange?: { from?: number; to?: number };
@@ -29,6 +29,26 @@ export type FullTextSearchDeps = {
   // search pane.
   onExit: () => void;
 };
+
+/// HybridHit はセッション単位集約のため msg_type を持たない。
+/// 既存 renderResults が msgType を参照するので、バッジから Role を推測して埋める。
+/// BM25 にヒットしていれば元メッセージの msg_type は分からないが「コンテキストあり」
+/// → user/assistant どちらの可能性もあるので 'user' にフォールバックしつつ、
+/// matchedBy をそのまま透過させて UI 側で判別できるようにする。
+function hybridToSearchHit(h: HybridHit): SearchHit {
+  return {
+    sessionId: h.sessionId,
+    project: h.project,
+    snippet: h.snippet,
+    msgType: 'user',
+    messageIndex: h.messageIndex,
+    timestamp: h.timestamp,
+    score: h.score,
+    contextBefore: h.contextBefore,
+    contextAfter: h.contextAfter,
+    matchedBy: h.matchedBy,
+  };
+}
 
 export function createFullTextSearchController(deps: FullTextSearchDeps) {
   const {
@@ -144,7 +164,7 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     const filterPayload = searchView.getFilterPayload();
     const searchArgs: Record<string, unknown> = {
       project: getSelectedProject() || null,
-      limit: requestMode === 'similar' ? 80 : 50,
+      limit: requestMode === 'similar' ? 30 : 50,
       sort: filterPayload.sort,
     };
     if (filterPayload.timeRange) searchArgs.timeRange = filterPayload.timeRange;
@@ -152,20 +172,41 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     const startedAt = performance.now();
     let results: SearchHit[] = [];
     let resolvedQuery = trimmedQuery;
+    const isHybrid = requestMode === 'similar';
     try {
-      results = await invoke('search_sessions', {
-        query: trimmedQuery,
-        ...searchArgs,
-      }) || [];
+      if (isHybrid) {
+        // Hybrid (vector + BM25 via RRF). Phase D では time/role フィルタは未対応、
+        // project フィルタのみ backend へ渡す。
+        const hybrid: HybridHit[] = await invoke('hybrid_search', {
+          query: trimmedQuery,
+          limit: 30,
+          project: getSelectedProject() || null,
+        }) || [];
+        results = hybrid.map(hybridToSearchHit);
+      } else {
+        results = await invoke('search_sessions', {
+          query: trimmedQuery,
+          ...searchArgs,
+        }) || [];
+      }
     } catch (error) {
       console.warn('[search] primary query failed, retrying with normalized query', error);
       const retryQuery = normalizeSearchQuery(trimmedQuery);
       if (retryQuery.length >= 2 && retryQuery !== trimmedQuery) {
         try {
-          results = await invoke('search_sessions', {
-            query: retryQuery,
-            ...searchArgs,
-          }) || [];
+          if (isHybrid) {
+            const hybrid: HybridHit[] = await invoke('hybrid_search', {
+              query: retryQuery,
+              limit: 30,
+              project: getSelectedProject() || null,
+            }) || [];
+            results = hybrid.map(hybridToSearchHit);
+          } else {
+            results = await invoke('search_sessions', {
+              query: retryQuery,
+              ...searchArgs,
+            }) || [];
+          }
           resolvedQuery = retryQuery;
         } catch (retryError) {
           console.error('[search] retry query failed', retryError);

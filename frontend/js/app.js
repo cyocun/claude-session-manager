@@ -7,6 +7,7 @@ import { getPreviewDetailCached, hidePreview, initPreview, invalidatePreviewCach
 import { createChatSearchController } from './chatSearch.js';
 import { createFullTextSearchController } from './fullTextSearch.js';
 import { createSearchView } from './searchView.js';
+import { createVectorIndexControls } from './vectorIndexControls.js';
 import { renderToolBlocks } from './toolRenderer.js';
 import { createSessionActions } from './sessionActions.js';
 import { initKeyboardNavigation, initResizeHandle, initTerminalResizeHandle } from './layoutControls.js';
@@ -162,6 +163,14 @@ const actions = createSessionActions({
     clearSelectedIds: () => { selectedIds.clear(); },
     getSessions: () => sessions,
 });
+// ベクトル索引の状態表示 + 構築トリガー (Phase D 最小版)。
+// UI は右下のフローティング。Phase D2 で検索バー周辺に組み込む。
+const vectorIndexControls = createVectorIndexControls({
+    t,
+    invoke,
+    onToast: (msg) => actions.showToast(msg),
+});
+vectorIndexControls.mount();
 async function fetchSessions(includeArchived = false) {
     try {
         sessions = await invokeStrict('list_sessions', { includeArchived });

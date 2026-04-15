@@ -410,6 +410,20 @@ export function createSearchView(deps) {
         const snippet = createEl('div', { className: 'srr-snippet' });
         snippet.innerHTML = sanitizeSnippet(hit.snippet);
         main.append(snippet);
+        // Hybrid 検索のバッジ (BM25 / ベクトル)。純 BM25 モードでは hit.matchedBy は
+        // 付かないので何も描画しない。CSS ファイルを触らずインライン style で仕上げる。
+        if (hit.matchedBy && hit.matchedBy.length > 0) {
+            const badges = createEl('div', {});
+            badges.style.cssText = 'display:flex;gap:4px;margin-top:2px;';
+            for (const tag of hit.matchedBy) {
+                const label = tag === 'bm25' ? t('hybridBadgeBm25') : t('hybridBadgeVector');
+                const bg = tag === 'bm25' ? 'var(--accent-weak, #2a4a6b)' : 'var(--accent-alt-weak, #4a2a6b)';
+                const b = createEl('span', { textContent: label });
+                b.style.cssText = `font-size:10px;padding:1px 6px;border-radius:8px;background:${bg};color:var(--text-secondary);letter-spacing:.02em;`;
+                badges.appendChild(b);
+            }
+            main.append(badges);
+        }
         if (hit.contextBefore || hit.contextAfter) {
             const ctx = createEl('div', { className: 'srr-context' });
             if (hit.contextBefore) {

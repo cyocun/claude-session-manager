@@ -54,8 +54,37 @@ export type SearchHit = {
   // so the result row can show surrounding text without an extra round-trip.
   contextBefore?: string;
   contextAfter?: string;
+  // Hybrid search (vector+BM25) passes this through so the UI can badge which
+  // path matched. Empty / absent for pure BM25 hits.
+  matchedBy?: string[];
 };
 
+export type HybridHit = {
+  sessionId: string;
+  project: string;
+  snippet: string;
+  score: number;
+  timestamp: number;
+  messageIndex: number;
+  matchedBy: string[];
+  contextBefore?: string;
+  contextAfter?: string;
+};
+
+export type VectorIndexStatus = {
+  indexedSessions: number;
+  chunkCount: number;
+  isIndexing: boolean;
+};
+
+export type EmbeddingModelStatus =
+  | { state: 'idle' }
+  | { state: 'loading' }
+  | { state: 'ready' }
+  | { state: 'failed'; message: string };
+
+// 'similar' はフロント既存のラベル名。内部的には hybrid_search
+// (BM25 + vector を RRF で融合) を呼ぶ。
 export type SearchMode = 'fulltext' | 'similar';
 
 // Optional filter/sort params accepted by the search_sessions Tauri command.
