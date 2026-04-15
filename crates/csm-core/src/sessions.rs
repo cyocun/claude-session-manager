@@ -1,6 +1,6 @@
 use crate::models::*;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::sync::{OnceLock, RwLock};
@@ -52,6 +52,57 @@ pub fn archive_path() -> std::path::PathBuf {
         .join("com.cyocun.claude-session-manager");
     std::fs::create_dir_all(&app_data).ok();
     app_data.join("archive.json")
+}
+
+/// Parse history.jsonl and collect session_id → project mappings.
+/// When `session_filter` is Some, only sessions in the set are collected.
+pub fn collect_session_projects(
+    session_filter: Option<&HashSet<&String>>,
+) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+    let history_path = history_file();
+    if !history_path.exists() {
+        return Ok(HashMap::new());
+    }
+
+    let file = File::open(&history_path)?;
+    let mut session_map: HashMap<String, String> = HashMap::new();
+    let mut parse_errors = 0usize;
+    let mut read_errors = 0usize;
+
+    for line_result in BufReader::new(file).lines() {
+        let line = match line_result {
+            Ok(line) => line,
+            Err(_) => {
+                read_errors += 1;
+                continue;
+            }
+        };
+        if let Ok(raw) = serde_json::from_str::<RawHistoryEntry>(&line) {
+            let entry: HistoryEntry = raw.into();
+            if entry.session_id.is_empty() {
+                continue;
+            }
+            if let Some(filter) = session_filter {
+                if !filter.contains(&entry.session_id) {
+                    continue;
+                }
+            }
+            session_map
+                .entry(entry.session_id)
+                .or_insert(entry.project);
+        } else {
+            parse_errors += 1;
+        }
+    }
+
+    if parse_errors > 0 || read_errors > 0 {
+        eprintln!(
+            "history.jsonl: ignored {} parse errors and {} read errors",
+            parse_errors, read_errors
+        );
+    }
+
+    Ok(session_map)
 }
 
 pub fn find_session_file(session_id: &str) -> Option<std::path::PathBuf> {

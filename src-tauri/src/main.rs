@@ -8,7 +8,7 @@ mod tray;
 
 use commands::{
     archive, clipboard, embedding as embedding_cmd, projects, pty, resume, search as search_cmd,
-    sessions, settings, updater,
+    sessions, settings, updater, vector_search as vector_cmd,
 };
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
@@ -84,6 +84,11 @@ fn main() {
             embedding_cmd::get_embedding_model_status,
             embedding_cmd::is_embedding_model_cached,
             embedding_cmd::download_embedding_model,
+            vector_cmd::get_vector_index_status,
+            vector_cmd::build_vector_index,
+            vector_cmd::update_vector_index,
+            vector_cmd::vector_search,
+            vector_cmd::hybrid_search,
             pty::pty_spawn,
             pty::pty_spawn_new,
             pty::pty_write,
@@ -122,7 +127,26 @@ fn main() {
             let embedding_dir = data_dir.join("embedding-models");
             let embedding_engine =
                 Arc::new(csm_core::embedding::EmbeddingEngine::new(embedding_dir));
-            app.manage(embedding_engine);
+            app.manage(embedding_engine.clone());
+
+            // Vector index: 起動時は disk 上の persisted データを読むだけ。
+            // 実 embedding の構築は build_vector_index コマンドで明示的に走らせる。
+            let vector_dir = data_dir.join("vector-index");
+            let vector_index = match csm_core::vector_index::VectorIndex::new(
+                vector_dir.clone(),
+                embedding_engine.clone(),
+            ) {
+                Ok(v) => Arc::new(v),
+                Err(e) => {
+                    eprintln!("Failed to init vector index: {}", e);
+                    let _ = std::fs::remove_dir_all(&vector_dir);
+                    Arc::new(
+                        csm_core::vector_index::VectorIndex::new(vector_dir, embedding_engine)
+                            .expect("Failed to init vector index after cleanup"),
+                    )
+                }
+            };
+            app.manage(vector_index);
 
             // Background index build
             let handle = app.handle().clone();

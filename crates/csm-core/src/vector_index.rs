@@ -2,17 +2,20 @@
 //!
 //! Phase B: chunk 化・永続化・flat コサイン検索まで。ハイブリッド融合は Phase C。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, RwLock,
+};
 
 use serde::{Deserialize, Serialize};
 
 use crate::embedding::EmbeddingEngine;
 use crate::models::{extract_searchable_messages, SearchableMessage};
-use crate::sessions::find_session_file;
+use crate::sessions::{collect_session_projects, find_session_file};
 
 const INDEX_VERSION: u32 = 1;
 
@@ -67,6 +70,15 @@ pub struct VectorIndex {
     engine: Arc<EmbeddingEngine>,
     chunks: RwLock<Vec<ChunkRecord>>,
     sessions: RwLock<HashMap<String, u64>>,
+    is_indexing: AtomicBool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VectorIndexStatus {
+    pub indexed_sessions: u32,
+    pub chunk_count: u32,
+    pub is_indexing: bool,
 }
 
 /// 永続化前の chunk。embedding 取得前の中間表現。
@@ -99,11 +111,20 @@ impl VectorIndex {
             engine,
             chunks: RwLock::new(chunks),
             sessions: RwLock::new(sessions),
+            is_indexing: AtomicBool::new(false),
         })
     }
 
     pub fn chunk_count(&self) -> usize {
         self.chunks.read().unwrap().len()
+    }
+
+    pub fn status(&self) -> VectorIndexStatus {
+        VectorIndexStatus {
+            indexed_sessions: self.sessions.read().unwrap().len() as u32,
+            chunk_count: self.chunks.read().unwrap().len() as u32,
+            is_indexing: self.is_indexing.load(Ordering::SeqCst),
+        }
     }
 
     pub fn needs_reindex(&self, session_id: &str, file_size: u64) -> bool {
@@ -191,6 +212,54 @@ impl VectorIndex {
             .collect())
     }
 
+    /// history.jsonl に載っている全セッションを差分 index 化。
+    /// 既に `needs_reindex` が false なセッションはスキップするため、
+    /// 2 回目以降は新規/更新セッションのみ embed が走る。
+    pub fn build_full_index(&self) -> Result<usize, String> {
+        self.is_indexing.store(true, Ordering::SeqCst);
+        let _guard = IndexingGuard {
+            flag: &self.is_indexing,
+        };
+
+        let session_map = collect_session_projects(None).map_err(|e| e.to_string())?;
+        let mut indexed = 0usize;
+        for (session_id, project) in &session_map {
+            let Some(path) = find_session_file(session_id) else {
+                continue;
+            };
+            let size = match std::fs::metadata(&path) {
+                Ok(m) => m.len(),
+                Err(_) => continue,
+            };
+            if !self.needs_reindex(session_id, size) {
+                continue;
+            }
+            if let Err(e) = self.index_session(session_id, project) {
+                eprintln!("vector index: failed to index {}: {}", session_id, e);
+                continue;
+            }
+            indexed += 1;
+        }
+        self.save()?;
+        Ok(indexed)
+    }
+
+    /// 指定 session_id の差分更新。主に新規会話が追加された場合に呼ぶ。
+    pub fn update_sessions(&self, session_ids: &[String]) -> Result<(), String> {
+        if self.is_indexing.load(Ordering::SeqCst) {
+            // 全 index build と被ったら skip (writer 取り合い防止)
+            return Ok(());
+        }
+        let id_set: HashSet<&String> = session_ids.iter().collect();
+        let session_map = collect_session_projects(Some(&id_set)).map_err(|e| e.to_string())?;
+        for (session_id, project) in &session_map {
+            if let Err(e) = self.index_session(session_id, project) {
+                eprintln!("vector index: failed to update {}: {}", session_id, e);
+            }
+        }
+        self.save()
+    }
+
     pub fn save(&self) -> Result<(), String> {
         let chunks = self.chunks.read().unwrap();
         let sessions = self.sessions.read().unwrap();
@@ -201,6 +270,16 @@ impl VectorIndex {
         };
         let json = serde_json::to_string(&persisted).map_err(|e| e.to_string())?;
         std::fs::write(&self.data_path, json).map_err(|e| e.to_string())
+    }
+}
+
+struct IndexingGuard<'a> {
+    flag: &'a AtomicBool,
+}
+
+impl Drop for IndexingGuard<'_> {
+    fn drop(&mut self) {
+        self.flag.store(false, Ordering::SeqCst);
     }
 }
 

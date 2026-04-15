@@ -8,3 +8,4 @@ pub mod search;
 pub mod sessions;
 pub mod settings;
 pub mod updater;
+pub mod vector_search;
