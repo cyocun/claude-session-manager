@@ -1,7 +1,7 @@
 use tauri::menu::{
     CheckMenuItemBuilder, MenuBuilder, MenuItemKind, SubmenuBuilder,
 };
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 fn find_check_item(items: &[MenuItemKind<tauri::Wry>], id: &str) -> Option<tauri::menu::CheckMenuItem<tauri::Wry>> {
     for item in items {
@@ -140,8 +140,14 @@ pub fn setup_menu(app: &AppHandle) -> tauri::Result<()> {
         .build()?;
 
     // Window menu
+    let always_on_top = CheckMenuItemBuilder::with_id("window:always-on-top", "Always on Top")
+        .checked(false).build(app)?;
     let window_sub = SubmenuBuilder::with_id(app, "window_sub", "Window")
-        .minimize().separator().close_window()
+        .minimize()
+        .separator()
+        .item(&always_on_top)
+        .separator()
+        .close_window()
         .build()?;
 
     let menu = MenuBuilder::new(app)
@@ -193,6 +199,11 @@ pub fn setup_menu(app: &AppHandle) -> tauri::Result<()> {
             let _ = app_handle.emit("menu-archive-current", ());
         } else if id == "app:check-updates" {
             let _ = app_handle.emit("menu-check-updates", ());
+        } else if id == "window:always-on-top" {
+            let checked = get_check_item(app_handle, "window:always-on-top").unwrap_or(false);
+            if let Some(win) = app_handle.get_webview_window("main") {
+                let _ = win.set_always_on_top(checked);
+            }
         }
     });
 

@@ -278,6 +278,9 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
     .tool-body.open { display: block; }
     .tool-body pre { margin: 0; white-space: pre-wrap; word-break: break-all; font-family: 'SF Mono', Menlo, monospace; font-size: 0.8em; color: var(--text); background: transparent !important; padding: 0 !important; }
     .tool-body pre code.hljs { background: transparent !important; padding: 0 !important; }
+    .tool-input-structured { display: flex; flex-direction: column; gap: 6px; }
+    .tool-input-key { font-family: 'SF Mono', Menlo, monospace; font-size: 0.72rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+    .tool-input-key:first-child { margin-top: 0; }
     .tool-result-output { max-height: 200px; overflow-y: auto; opacity: 0.7; }
     .tool-result-markdown { max-height: 400px; overflow-y: auto; font-size: 0.85em; }
     .tool-result-markdown p:first-child { margin-top: 0; }
@@ -661,11 +664,11 @@ html, body { height: 100%; margin: 0; overflow: hidden; font-family: -apple-syst
 
     /* Embedded terminal */
     #terminalContainer {
-      background: #1e1e2e;
-      padding: 4px;
+      background: #002b36; /* Solarized Dark — xterm.js テーマと揃える */
+      padding: 6px 8px;
     }
     :root:not(.dark) #terminalContainer {
-      background: #ffffff;
+      background: #fdf6e3; /* Solarized Light */
     }
     #terminalContainer .xterm {
       height: 100%;

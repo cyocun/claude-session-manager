@@ -63,7 +63,71 @@ const MARKDOWN_RESULT_TOOLS = new Set([
     'Agent', 'TaskCreate', 'TaskGet', 'TaskOutput',
 ]);
 function looksLikeMarkdown(text) {
-    return /^#{1,6}\s|^\*\*|^- |\n#{1,6}\s|\n- |\n\*\*/.test(text);
+    return /^#{1,6}\s|^\*\*|^- |\n#{1,6}\s|\n- |\n\*\*|```/.test(text);
+}
+function guessLangFromKey(key) {
+    const k = key.toLowerCase();
+    if (/(^|_)(function|script|code|js|javascript|expression)($|_)/.test(k))
+        return 'javascript';
+    if (/(^|_)(ts|typescript)($|_)/.test(k))
+        return 'typescript';
+    if (/sql|query/.test(k))
+        return 'sql';
+    if (/html|markup/.test(k))
+        return 'xml';
+    if (/css|style/.test(k))
+        return 'css';
+    if (/(^|_)json($|_)/.test(k))
+        return 'json';
+    if (/bash|shell|cmd|command/.test(k))
+        return 'bash';
+    if (/(^|_)(yaml|yml)($|_)/.test(k))
+        return 'yaml';
+    return null;
+}
+function looksLikeCodeValue(v) {
+    return v.includes('\n') || v.length > 160;
+}
+function makeStructuredInputBody(input) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        return makeHighlightedPre(JSON.stringify(input, null, 2), 'json');
+    }
+    const obj = input;
+    const keys = Object.keys(obj);
+    const hasCodeValue = keys.some((k) => typeof obj[k] === 'string' && looksLikeCodeValue(obj[k]));
+    if (!hasCodeValue) {
+        return makeHighlightedPre(JSON.stringify(input, null, 2), 'json');
+    }
+    const container = document.createElement('div');
+    container.className = 'tool-input-structured';
+    for (const key of keys) {
+        const value = obj[key];
+        const label = document.createElement('div');
+        label.className = 'tool-input-key';
+        label.textContent = key;
+        container.appendChild(label);
+        if (typeof value === 'string' && looksLikeCodeValue(value)) {
+            container.appendChild(makeHighlightedPre(value, guessLangFromKey(key)));
+        }
+        else if (typeof value === 'string') {
+            container.appendChild(makeHighlightedPre(value, null));
+        }
+        else {
+            container.appendChild(makeHighlightedPre(JSON.stringify(value, null, 2), 'json'));
+        }
+    }
+    return container;
+}
+// ``` lang\n ... \n``` 内の JSON を pretty-print。marked 側のハイライトは流用する。
+function prettyPrintFencedJson(text) {
+    return text.replace(/```json\s*\n([\s\S]*?)\n```/g, (match, body) => {
+        try {
+            return '```json\n' + JSON.stringify(JSON.parse(body), null, 2) + '\n```';
+        }
+        catch {
+            return match;
+        }
+    });
 }
 export function renderToolBlocks(tools, externalResultMap, createEl, renderMarkdown) {
     const els = [];
@@ -109,7 +173,7 @@ export function renderToolBlocks(tools, externalResultMap, createEl, renderMarkd
         else {
             summary = tool.name;
             if (tool.input !== undefined)
-                bodyEl = makeHighlightedPre(JSON.stringify(tool.input, null, 2), 'json');
+                bodyEl = makeStructuredInputBody(tool.input);
         }
         const icon = toolIcon(tool.name);
         const chevron = createEl('span', { className: 'tool-chevron', textContent: '\u25B6' });
@@ -148,7 +212,7 @@ export function renderToolBlocks(tools, externalResultMap, createEl, renderMarkd
                 const mdDiv = document.createElement('div');
                 mdDiv.className = 'md-content tool-result-markdown';
                 // renderMarkdown already applies DOMPurify.sanitize() internally
-                mdDiv.innerHTML = renderMarkdown(result.output);
+                mdDiv.innerHTML = renderMarkdown(prettyPrintFencedJson(result.output));
                 body.appendChild(mdDiv);
             }
             else {
