@@ -57,6 +57,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             sessions::list_sessions,
             sessions::get_session_detail,
+            sessions::get_session_messages_around,
             projects::list_projects,
             projects::get_project_icon,
             projects::get_token_dashboard,

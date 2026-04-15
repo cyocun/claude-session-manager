@@ -1,17 +1,25 @@
 import { normalizeSearchQuery, parseSearchQuery } from './searchUtils.js';
-import { renderSearchResults, renderLoading } from './searchResultRenderer.js';
+import { searchTelemetry } from './searchTelemetry.js';
 export function createFullTextSearchController(deps) {
-    const { byId, t, getLang, getSessions, getSelectedProject, setProjectFilter, resolveProjectPath, projectDisplayName, invoke, renderSessions, showDetail, setSelectedSession, chatSearch, } = deps;
+    const { byId, t, getSelectedProject, setProjectFilter, resolveProjectPath, invoke, searchView, onExit, } = deps;
     let searchMode = 'fulltext';
-    let searchResults = [];
     let activeQuery = '';
     let activeResolvedQuery = '';
     let activeSearchMode = 'fulltext';
     let searchIndexReady = false;
     let fulltextSearchTimer = null;
     let searchRequestSeq = 0;
+    // Correlation id for the most recent completed search. Used by
+    // searchView/app.ts to tag open_result and escape_no_open events.
+    let currentQueryId = null;
+    function getCurrentQueryId() {
+        return currentQueryId;
+    }
     function getMode() {
         return searchMode;
+    }
+    function getActiveResolvedQuery() {
+        return activeResolvedQuery;
     }
     function isSearchActive() {
         return activeQuery.length >= 2;
@@ -56,21 +64,46 @@ export function createFullTextSearchController(deps) {
     async function perform(query) {
         const trimmedQuery = query.trim();
         if (!trimmedQuery || trimmedQuery.length < 2) {
+            const wasActive = activeQuery.length >= 2;
+            const dismissedQueryId = currentQueryId;
             activeQuery = '';
             activeResolvedQuery = '';
-            searchResults = [];
-            renderSessions();
+            if (wasActive && searchView.isActive()) {
+                // exit() reads getCurrentQueryId() to tag an escape_no_open event,
+                // so keep currentQueryId alive across the exit call and clear after.
+                searchView.exit();
+                onExit();
+                if (dismissedQueryId) {
+                    searchTelemetry.append({
+                        type: 'cleared_input',
+                        queryId: dismissedQueryId,
+                        timestamp: Date.now(),
+                    });
+                }
+            }
+            currentQueryId = null;
             return;
         }
         const requestMode = searchMode;
         const requestSeq = ++searchRequestSeq;
         activeQuery = trimmedQuery;
         activeSearchMode = requestMode;
-        renderLoading(byId('sessionList'), searchIndexReady, t);
+        if (!searchView.isActive()) {
+            searchView.enter();
+        }
+        // Show a loading affordance via an empty render; final results overwrite.
+        searchView.renderResults([], requestMode, searchIndexReady, trimmedQuery);
+        const filterPayload = searchView.getFilterPayload();
         const searchArgs = {
             project: getSelectedProject() || null,
             limit: requestMode === 'similar' ? 80 : 50,
+            sort: filterPayload.sort,
         };
+        if (filterPayload.timeRange)
+            searchArgs.timeRange = filterPayload.timeRange;
+        if (filterPayload.msgTypes)
+            searchArgs.msgTypes = filterPayload.msgTypes;
+        const startedAt = performance.now();
         let results = [];
         let resolvedQuery = trimmedQuery;
         try {
@@ -104,30 +137,50 @@ export function createFullTextSearchController(deps) {
         if (activeQuery !== trimmedQuery)
             return;
         activeResolvedQuery = resolvedQuery;
-        searchResults = results;
-        const rendererDeps = {
-            byId,
-            t,
-            getLang,
-            getSessions,
-            projectDisplayName,
-            invoke,
-            showDetail,
-            setSelectedSession,
-            chatSearch,
-            getActiveResolvedQuery: () => activeResolvedQuery,
-            getSearchInputValue: () => byId('search').value.trim(),
-        };
-        renderSearchResults(searchResults, activeSearchMode, searchIndexReady, rendererDeps);
+        searchView.renderResults(results, activeSearchMode, searchIndexReady, resolvedQuery);
+        // Mint a new correlation id per completed search; subsequent open/escape
+        // events tag against it. Done after render so telemetry reflects the
+        // actual result set the user saw.
+        currentQueryId = searchTelemetry.newQueryId();
+        searchTelemetry.append({
+            type: 'search',
+            queryId: currentQueryId,
+            query: resolvedQuery,
+            mode: requestMode,
+            filters: filterPayload,
+            resultCount: results.length,
+            durationMs: Math.round(performance.now() - startedAt),
+            indexReady: searchIndexReady,
+            timestamp: Date.now(),
+        });
     }
     function clear() {
         const search = byId('search');
         const clearBtn = byId('searchClearBtn');
-        if (!search.value)
+        if (!search.value && !searchView.isActive())
             return;
         search.value = '';
-        clearBtn.style.display = 'none';
-        onSearchInput();
+        if (clearBtn)
+            clearBtn.style.display = 'none';
+        if (fulltextSearchTimer)
+            clearTimeout(fulltextSearchTimer);
+        // Force-perform to short-circuit into the "empty query" exit path.
+        void perform('');
+    }
+    // Re-run the search with the current input value. Used by the filter bar:
+    // changing a chip doesn't touch the query itself, but we need to fetch again
+    // with the new filter payload. Debounces via a shorter delay than onInput
+    // since there's no typing involved.
+    let rerunTimer = null;
+    function rerun() {
+        if (!searchView.isActive())
+            return;
+        const search = byId('search');
+        if (rerunTimer)
+            clearTimeout(rerunTimer);
+        rerunTimer = setTimeout(() => {
+            void perform(search.value);
+        }, 150);
     }
     function bindInputEvents(inputEl, clearBtn) {
         inputEl.addEventListener('input', () => {
@@ -149,5 +202,8 @@ export function createFullTextSearchController(deps) {
         perform,
         clear,
         bindInputEvents,
+        getActiveResolvedQuery,
+        rerun,
+        getCurrentQueryId,
     };
 }

@@ -1,51 +1,68 @@
 import { normalizeSearchQuery, parseSearchQuery } from './searchUtils.js';
-import { renderSearchResults, renderLoading, type SearchResultRendererDeps } from './searchResultRenderer.js';
-import type { SearchHit, SearchMode } from './types.js';
+import { searchTelemetry } from './searchTelemetry.js';
+import type { SearchHit, SearchMode, SearchSort } from './types.js';
+
+export type SearchFilterPayload = {
+  timeRange?: { from?: number; to?: number };
+  msgTypes?: string[];
+  sort: SearchSort;
+};
+
+export type SearchViewApi = {
+  enter: () => void;
+  exit: () => void;
+  isActive: () => boolean;
+  renderResults: (results: SearchHit[], mode: SearchMode, indexReady: boolean, query: string) => void;
+  getFilterPayload: () => SearchFilterPayload;
+};
 
 export type FullTextSearchDeps = {
   byId: (id: string) => any;
   t: (key: string) => string;
-  getLang: () => string;
-  getSessions: () => Array<{ sessionId: string; firstDisplay: string }>;
   getSelectedProject: () => string | null;
   setProjectFilter: (path: string | null) => void;
   resolveProjectPath: (displayName: string) => string | null;
-  projectDisplayName: (path: string) => string;
   invoke: (cmd: string, args?: Record<string, unknown>) => Promise<any>;
-  renderSessions: () => void;
-  showDetail: (sessionId: string) => Promise<void>;
-  setSelectedSession: (sessionId: string) => void;
-  chatSearch: { doSearch: () => void; scrollToMessageIndex: (messageIndex: number) => void };
+  searchView: SearchViewApi;
+  // Called when search exits (empty query) so app.ts can restore the previous
+  // view (detail or startup). Invoked after searchView.exit() has hidden the
+  // search pane.
+  onExit: () => void;
 };
 
 export function createFullTextSearchController(deps: FullTextSearchDeps) {
   const {
     byId,
     t,
-    getLang,
-    getSessions,
     getSelectedProject,
     setProjectFilter,
     resolveProjectPath,
-    projectDisplayName,
     invoke,
-    renderSessions,
-    showDetail,
-    setSelectedSession,
-    chatSearch,
+    searchView,
+    onExit,
   } = deps;
 
   let searchMode: SearchMode = 'fulltext';
-  let searchResults: SearchHit[] = [];
   let activeQuery = '';
   let activeResolvedQuery = '';
   let activeSearchMode: SearchMode = 'fulltext';
   let searchIndexReady = false;
   let fulltextSearchTimer: ReturnType<typeof setTimeout> | null = null;
   let searchRequestSeq = 0;
+  // Correlation id for the most recent completed search. Used by
+  // searchView/app.ts to tag open_result and escape_no_open events.
+  let currentQueryId: string | null = null;
+
+  function getCurrentQueryId(): string | null {
+    return currentQueryId;
+  }
 
   function getMode(): SearchMode {
     return searchMode;
+  }
+
+  function getActiveResolvedQuery(): string {
+    return activeResolvedQuery;
   }
 
   function isSearchActive(): boolean {
@@ -92,10 +109,24 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
   async function perform(query: string): Promise<void> {
     const trimmedQuery = query.trim();
     if (!trimmedQuery || trimmedQuery.length < 2) {
+      const wasActive = activeQuery.length >= 2;
+      const dismissedQueryId = currentQueryId;
       activeQuery = '';
       activeResolvedQuery = '';
-      searchResults = [];
-      renderSessions();
+      if (wasActive && searchView.isActive()) {
+        // exit() reads getCurrentQueryId() to tag an escape_no_open event,
+        // so keep currentQueryId alive across the exit call and clear after.
+        searchView.exit();
+        onExit();
+        if (dismissedQueryId) {
+          searchTelemetry.append({
+            type: 'cleared_input',
+            queryId: dismissedQueryId,
+            timestamp: Date.now(),
+          });
+        }
+      }
+      currentQueryId = null;
       return;
     }
 
@@ -104,12 +135,21 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     activeQuery = trimmedQuery;
     activeSearchMode = requestMode;
 
-    renderLoading(byId('sessionList'), searchIndexReady, t);
+    if (!searchView.isActive()) {
+      searchView.enter();
+    }
+    // Show a loading affordance via an empty render; final results overwrite.
+    searchView.renderResults([], requestMode, searchIndexReady, trimmedQuery);
 
-    const searchArgs = {
+    const filterPayload = searchView.getFilterPayload();
+    const searchArgs: Record<string, unknown> = {
       project: getSelectedProject() || null,
       limit: requestMode === 'similar' ? 80 : 50,
+      sort: filterPayload.sort,
     };
+    if (filterPayload.timeRange) searchArgs.timeRange = filterPayload.timeRange;
+    if (filterPayload.msgTypes) searchArgs.msgTypes = filterPayload.msgTypes;
+    const startedAt = performance.now();
     let results: SearchHit[] = [];
     let resolvedQuery = trimmedQuery;
     try {
@@ -140,31 +180,48 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     if (activeQuery !== trimmedQuery) return;
 
     activeResolvedQuery = resolvedQuery;
-    searchResults = results;
+    searchView.renderResults(results, activeSearchMode, searchIndexReady, resolvedQuery);
 
-    const rendererDeps: SearchResultRendererDeps = {
-      byId,
-      t,
-      getLang,
-      getSessions,
-      projectDisplayName,
-      invoke,
-      showDetail,
-      setSelectedSession,
-      chatSearch,
-      getActiveResolvedQuery: () => activeResolvedQuery,
-      getSearchInputValue: () => (byId('search') as HTMLInputElement).value.trim(),
-    };
-    renderSearchResults(searchResults, activeSearchMode, searchIndexReady, rendererDeps);
+    // Mint a new correlation id per completed search; subsequent open/escape
+    // events tag against it. Done after render so telemetry reflects the
+    // actual result set the user saw.
+    currentQueryId = searchTelemetry.newQueryId();
+    searchTelemetry.append({
+      type: 'search',
+      queryId: currentQueryId,
+      query: resolvedQuery,
+      mode: requestMode,
+      filters: filterPayload,
+      resultCount: results.length,
+      durationMs: Math.round(performance.now() - startedAt),
+      indexReady: searchIndexReady,
+      timestamp: Date.now(),
+    });
   }
 
   function clear(): void {
     const search = byId('search') as HTMLInputElement;
     const clearBtn = byId('searchClearBtn');
-    if (!search.value) return;
+    if (!search.value && !searchView.isActive()) return;
     search.value = '';
-    clearBtn.style.display = 'none';
-    onSearchInput();
+    if (clearBtn) clearBtn.style.display = 'none';
+    if (fulltextSearchTimer) clearTimeout(fulltextSearchTimer);
+    // Force-perform to short-circuit into the "empty query" exit path.
+    void perform('');
+  }
+
+  // Re-run the search with the current input value. Used by the filter bar:
+  // changing a chip doesn't touch the query itself, but we need to fetch again
+  // with the new filter payload. Debounces via a shorter delay than onInput
+  // since there's no typing involved.
+  let rerunTimer: ReturnType<typeof setTimeout> | null = null;
+  function rerun(): void {
+    if (!searchView.isActive()) return;
+    const search = byId('search') as HTMLInputElement;
+    if (rerunTimer) clearTimeout(rerunTimer);
+    rerunTimer = setTimeout(() => {
+      void perform(search.value);
+    }, 150);
   }
 
   function bindInputEvents(inputEl: HTMLInputElement, clearBtn: HTMLElement): void {
@@ -188,5 +245,8 @@ export function createFullTextSearchController(deps: FullTextSearchDeps) {
     perform,
     clear,
     bindInputEvents,
+    getActiveResolvedQuery,
+    rerun,
+    getCurrentQueryId,
   };
 }

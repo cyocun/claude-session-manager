@@ -2,21 +2,36 @@ use tantivy::schema::document::Value as _;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::ops::Bound;
 use std::path::{Path, PathBuf};
-use std::sync::{atomic::{AtomicBool, Ordering}, Mutex, RwLock};
+use std::sync::{atomic::{AtomicBool, AtomicU64, Ordering}, Mutex, RwLock};
 use tantivy::collector::TopDocs;
-use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, PhraseQuery, PhrasePrefixQuery, QueryParser, TermQuery};
+use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, PhraseQuery, PhrasePrefixQuery, QueryParser, RangeQuery, TermQuery};
 use tantivy::schema::*;
 use tantivy::snippet::SnippetGenerator;
 use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument};
 
 use crate::sessions::{find_session_file, history_file};
-use crate::models::{extract_searchable_messages, HistoryEntry, RawHistoryEntry, SearchHit, SearchIndexStatus};
+use crate::models::{extract_searchable_messages, HistoryEntry, RawHistoryEntry, SearchHit, SearchIndexStatus, SearchSort, SearchTimeRange};
 
 const MAX_CONTENT_CHARS: usize = 50 * 1024; // 50K chars per document
 const WRITER_HEAP_SIZE: usize = 50 * 1024 * 1024; // 50MB
 const INDEX_VERSION: u32 = 3; // Bump when schema/tokenizer changes to force reindex
 const TOKENIZER_NAME: &str = "lindera_ipadic";
+
+// PhraseQuery slop: how many positions can intervene between consecutive
+// phrase terms before the match fails. 2 is enough to absorb a single
+// Japanese particle (e.g. "Tauri の ビルド" matching "Tauri ビルド").
+const PHRASE_SLOP: u32 = 2;
+
+// Time-decay tau (in days) for sort=relevance_recent. exp(-days/tau)
+// gives a half-life of ~tau * ln(2) ≈ 9.7 days at tau=14.
+const RECENT_TAU_DAYS: f32 = 14.0;
+const MS_PER_DAY: f32 = 86_400_000.0;
+
+// Keep result-row context snippets short — they sit beneath the main snippet
+// in a 2-line clamp.
+const CONTEXT_SNIPPET_CHARS: usize = 140;
 
 pub struct SearchIndex {
     index: Index,
@@ -33,6 +48,10 @@ pub struct SearchIndex {
     meta_path: PathBuf,
     pub is_indexing: AtomicBool,
     pub total_sessions: Mutex<u32>,
+    // Phase 2: count messages whose content was truncated at MAX_CONTENT_CHARS
+    // during indexing. Logged at end of build_full_index so we can decide
+    // whether the limit needs raising or whether splitting is required.
+    truncated_messages: AtomicU64,
 }
 
 struct IndexingFlagGuard<'a> {
@@ -42,6 +61,105 @@ struct IndexingFlagGuard<'a> {
 impl Drop for IndexingFlagGuard<'_> {
     fn drop(&mut self) {
         self.flag.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Recompute scores in place (for `relevance_recent`) and sort. The decay
+/// uses elapsed-time relative to the most recent hit's timestamp rather than
+/// wall-clock `now`, so tests don't drift and sessions from older time-frames
+/// still get internally ranked sensibly.
+fn apply_sort(results: &mut Vec<SearchHit>, sort: SearchSort) {
+    match sort {
+        SearchSort::Relevance => {
+            results.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+        SearchSort::Newest => {
+            results.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        }
+        SearchSort::Oldest => {
+            results.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        }
+        SearchSort::RelevanceRecent => {
+            let now_ms = results.iter().map(|h| h.timestamp).max().unwrap_or(0);
+            for hit in results.iter_mut() {
+                if hit.timestamp == 0 || now_ms == 0 {
+                    continue;
+                }
+                let elapsed_ms = now_ms.saturating_sub(hit.timestamp) as f32;
+                let days = elapsed_ms / MS_PER_DAY;
+                let decay = (-days / RECENT_TAU_DAYS).exp();
+                hit.score *= decay;
+            }
+            results.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+    }
+}
+
+/// Compact the source content of a single message into a one-line snippet
+/// short enough to live under the main snippet without doubling the row
+/// height.
+fn compact_for_context(raw: &str) -> String {
+    let collapsed: String = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    collapsed.chars().take(CONTEXT_SNIPPET_CHARS).collect()
+}
+
+/// Read each session file at most once and attach 1-message before/after
+/// context to every hit in that session. Falls back gracefully when the file
+/// can't be parsed — context is purely informational, so absence is OK.
+fn attach_context(results: &mut [SearchHit]) {
+    let mut by_session: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, hit) in results.iter().enumerate() {
+        by_session
+            .entry(hit.session_id.clone())
+            .or_default()
+            .push(i);
+    }
+
+    for (session_id, indices) in by_session {
+        let session_file = match find_session_file(&session_id) {
+            Some(p) => p,
+            None => continue,
+        };
+        let file = match File::open(&session_file) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+        let msgs = extract_searchable_messages(&file);
+        if msgs.is_empty() {
+            continue;
+        }
+        let mut pos_by_idx: HashMap<u32, usize> = HashMap::with_capacity(msgs.len());
+        for (pos, m) in msgs.iter().enumerate() {
+            pos_by_idx.insert(m.message_index, pos);
+        }
+
+        for hit_idx in indices {
+            let target_index = results[hit_idx].message_index;
+            let pos = match pos_by_idx.get(&target_index) {
+                Some(&p) => p,
+                None => continue,
+            };
+            if pos > 0 {
+                let before = compact_for_context(&msgs[pos - 1].content);
+                if !before.is_empty() {
+                    results[hit_idx].context_before = Some(before);
+                }
+            }
+            if pos + 1 < msgs.len() {
+                let after = compact_for_context(&msgs[pos + 1].content);
+                if !after.is_empty() {
+                    results[hit_idx].context_after = Some(after);
+                }
+            }
+        }
     }
 }
 
@@ -181,6 +299,7 @@ impl SearchIndex {
             meta_path,
             is_indexing: AtomicBool::new(false),
             total_sessions: Mutex::new(0),
+            truncated_messages: AtomicU64::new(0),
         })
     }
 
@@ -251,7 +370,13 @@ impl SearchIndex {
 
         // Add new documents
         for msg in &messages {
-            let content: String = msg.content.chars().take(MAX_CONTENT_CHARS).collect();
+            let total_chars = msg.content.chars().count();
+            let content: String = if total_chars > MAX_CONTENT_CHARS {
+                self.truncated_messages.fetch_add(1, Ordering::Relaxed);
+                msg.content.chars().take(MAX_CONTENT_CHARS).collect()
+            } else {
+                msg.content.clone()
+            };
             writer.add_document(doc!(
                 self.f_session_id => session_id,
                 self.f_project => project,
@@ -277,6 +402,9 @@ impl SearchIndex {
         query_str: &str,
         project_filter: Option<&str>,
         limit: usize,
+        time_range: Option<&SearchTimeRange>,
+        msg_types: Option<&[String]>,
+        sort: SearchSort,
     ) -> Result<Vec<SearchHit>, Box<dyn std::error::Error>> {
         let limit = limit.min(500);
         let searcher = self.reader.searcher();
@@ -315,12 +443,14 @@ impl SearchIndex {
                 }
                 must_clauses.push((Occur::Must, Box::new(BooleanQuery::new(should))));
             } else {
-                // Multiple tokens: PhraseQuery (consecutive match)
+                // Multiple tokens: PhraseQuery with slop so a single particle
+                // (e.g. "の" / "を") between phrase terms doesn't drop the hit.
                 let phrase_terms: Vec<tantivy::Term> = token_strings
                     .iter()
                     .map(|s| tantivy::Term::from_field_text(self.f_content, s))
                     .collect();
-                let phrase_q = PhraseQuery::new(phrase_terms);
+                let mut phrase_q = PhraseQuery::new(phrase_terms);
+                phrase_q.set_slop(PHRASE_SLOP);
                 must_clauses.push((Occur::Must, Box::new(phrase_q)));
             }
         }
@@ -332,21 +462,65 @@ impl SearchIndex {
             Box::new(BooleanQuery::new(must_clauses))
         };
 
-        let final_query: Box<dyn tantivy::query::Query> = if let Some(project) = project_filter {
-            let project_query = TermQuery::new(
-                tantivy::Term::from_field_text(self.f_project, project),
-                IndexRecordOption::Basic,
-            );
-            Box::new(BooleanQuery::new(vec![
-                (Occur::Must, text_query),
-                (Occur::Must, Box::new(project_query)),
-            ]))
+        // Compose filters as additional MUST clauses on top of the text query.
+        let mut filtered: Vec<(Occur, Box<dyn tantivy::query::Query>)> =
+            vec![(Occur::Must, text_query)];
+
+        if let Some(project) = project_filter {
+            filtered.push((
+                Occur::Must,
+                Box::new(TermQuery::new(
+                    tantivy::Term::from_field_text(self.f_project, project),
+                    IndexRecordOption::Basic,
+                )),
+            ));
+        }
+
+        if let Some(types) = msg_types {
+            let allowed: Vec<&String> = types
+                .iter()
+                .filter(|s| !s.is_empty())
+                .collect();
+            if !allowed.is_empty() {
+                let type_clauses: Vec<(Occur, Box<dyn tantivy::query::Query>)> = allowed
+                    .iter()
+                    .map(|t| {
+                        let q = TermQuery::new(
+                            tantivy::Term::from_field_text(self.f_msg_type, t),
+                            IndexRecordOption::Basic,
+                        );
+                        (Occur::Should, Box::new(q) as Box<dyn tantivy::query::Query>)
+                    })
+                    .collect();
+                filtered.push((Occur::Must, Box::new(BooleanQuery::new(type_clauses))));
+            }
+        }
+
+        if let Some(range) = time_range {
+            let lower = match range.from {
+                Some(v) => Bound::Included(tantivy::Term::from_field_u64(self.f_timestamp, v)),
+                None => Bound::Unbounded,
+            };
+            let upper = match range.to {
+                Some(v) => Bound::Excluded(tantivy::Term::from_field_u64(self.f_timestamp, v)),
+                None => Bound::Unbounded,
+            };
+            // Skip building a no-op range query when both bounds are absent.
+            if !matches!((&lower, &upper), (Bound::Unbounded, Bound::Unbounded)) {
+                filtered.push((Occur::Must, Box::new(RangeQuery::new(lower, upper))));
+            }
+        }
+
+        let final_query: Box<dyn tantivy::query::Query> = if filtered.len() == 1 {
+            filtered.into_iter().next().unwrap().1
         } else {
-            text_query
+            Box::new(BooleanQuery::new(filtered))
         };
 
-        // Return all matching messages (not just best per session)
-        let top_docs = searcher.search(&final_query, &TopDocs::with_limit(limit * 5))?;
+        // Fetch a pool larger than `limit` so post-processing (decay rescoring,
+        // context attachment) has headroom to reorder before truncation.
+        let pool_size = (limit * 5).max(limit);
+        let top_docs = searcher.search(&final_query, &TopDocs::with_limit(pool_size))?;
 
         let snippet_generator = SnippetGenerator::create(&searcher, &final_query, self.f_content)?;
 
@@ -411,11 +585,19 @@ impl SearchIndex {
                 timestamp,
                 message_index,
                 score,
+                context_before: None,
+                context_after: None,
             });
         }
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        // Apply sort (decay-rescore for relevance_recent runs before truncation
+        // so a strong-but-recent doc can leapfrog a stronger-but-older one).
+        apply_sort(&mut results, sort);
         results.truncate(limit);
+
+        // Attach 1-message context before/after each hit. Done after truncation
+        // to avoid file reads for hits we drop.
+        attach_context(&mut results);
 
         Ok(results)
     }
@@ -459,7 +641,15 @@ impl SearchIndex {
         self.writer.lock().unwrap().commit()?;
         self.save_meta();
 
-        eprintln!("Search index: build complete");
+        let truncated = self.truncated_messages.load(Ordering::Relaxed);
+        if truncated > 0 {
+            eprintln!(
+                "Search index: build complete ({} messages truncated at {} chars)",
+                truncated, MAX_CONTENT_CHARS
+            );
+        } else {
+            eprintln!("Search index: build complete");
+        }
         Ok(())
     }
 

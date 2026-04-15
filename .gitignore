@@ -11,5 +11,9 @@ target/
 *.key
 *.key.pub
 
-# Private project docs (strategy / todos / internal memos)
-docs/
+# Private project docs (strategy / todos / internal memos).
+# Exception: search-findings.md is a shared analysis template checked in
+# so users of Phase 4 telemetry have a starting point.
+# Use per-file patterns (not `docs/`) so git can honour the exception.
+docs/*
+!docs/search-findings.md

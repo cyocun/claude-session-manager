@@ -50,6 +50,19 @@ export type SearchHit = {
   messageIndex: number;
   timestamp?: number;
   score?: number;
+  // Phase 2: 1-message context above/below the hit, returned by the backend
+  // so the result row can show surrounding text without an extra round-trip.
+  contextBefore?: string;
+  contextAfter?: string;
 };
 
 export type SearchMode = 'fulltext' | 'similar';
+
+// Optional filter/sort params accepted by the search_sessions Tauri command.
+// Wired by Phase 3 UI; Phase 2 just makes the API surface available.
+export type SearchTimeRange = {
+  from?: number;
+  to?: number;
+};
+
+export type SearchSort = 'relevance' | 'newest' | 'oldest' | 'relevance_recent';

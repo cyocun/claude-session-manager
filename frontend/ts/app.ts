@@ -15,6 +15,7 @@ import {
 } from './preview.js';
 import { createChatSearchController } from './chatSearch.js';
 import { createFullTextSearchController } from './fullTextSearch.js';
+import { createSearchView } from './searchView.js';
 import { renderToolBlocks } from './toolRenderer.js';
 import { createSessionActions } from './sessionActions.js';
 import { initKeyboardNavigation, initResizeHandle, initTerminalResizeHandle } from './layoutControls.js';
@@ -165,21 +166,72 @@ const chatSearch = createChatSearchController({
   t,
   isAllMessagesRendered: () => allMessagesRendered,
 });
+// searchView and fullTextSearch form a pair: fullTextSearch owns query state
+// and invokes search_sessions; searchView owns the pane layout and result
+// rendering. `openSession` here is the hand-off from search-mode back into the
+// normal detail view — it exits search, restores the selected session, and
+// re-uses chat-search to highlight the query within the session.
+const searchView = createSearchView({
+  byId,
+  byIdOptional,
+  t,
+  invoke,
+  getSessions: () => sessions,
+  projectDisplayName,
+  openSession: (sessionId: string, messageIndex: number) => {
+    // Clearing the input also triggers fullTextSearch.perform('') which will
+    // exit search mode via its own flow. We call exitSearchMode directly to
+    // make the transition synchronous before showDetail repaints.
+    const searchInput = byId('search') as HTMLInputElement;
+    const query = fullTextSearch.getActiveResolvedQuery() || searchInput.value.trim();
+    exitSearchMode();
+    selectedSession = sessionId;
+    void showDetail(sessionId).then(() => {
+      if (query) {
+        const chatInput = byIdOptional<HTMLInputElement>('chatSearch');
+        if (chatInput) {
+          chatInput.value = query;
+          chatSearch.doSearch();
+        }
+      }
+      chatSearch.scrollToMessageIndex(messageIndex);
+    });
+  },
+  onRequestExit: () => {
+    // User pressed Esc with the search input focused — let the shortcut layer
+    // clear the input; no direct exit here.
+  },
+  onFiltersChanged: () => {
+    // Filter bar chip changed — re-run with the current query. fullTextSearch
+    // debounces the actual invoke.
+    fullTextSearch.rerun();
+  },
+  getCurrentQueryId: () => fullTextSearch.getCurrentQueryId(),
+});
 const fullTextSearch = createFullTextSearchController({
   byId,
   t,
-  getLang: () => lang,
-  getSessions: () => sessions,
   getSelectedProject: () => selectedProject,
   setProjectFilter: (path: string | null) => setProjectFilter(path),
   resolveProjectPath: (name: string) => resolveProjectPath(name),
-  projectDisplayName,
   invoke,
-  renderSessions,
-  showDetail,
-  setSelectedSession: (sessionId: string) => { selectedSession = sessionId; },
-  chatSearch,
+  searchView: {
+    enter: () => searchView.enter(),
+    exit: () => searchView.exit(),
+    isActive: () => searchView.isActive(),
+    renderResults: (results, mode, indexReady, query) =>
+      searchView.renderResults(results, mode, indexReady, query),
+    getFilterPayload: () => searchView.getFilterPayload(),
+  },
+  onExit: () => {
+    // Search pane is already hidden by searchView.exit(); nothing to repaint —
+    // the detail pane (or startup view) had its display flipped back.
+  },
 });
+
+function exitSearchMode(): void {
+  fullTextSearch.clear();
+}
 const actions = createSessionActions({
   byId,
   t,
@@ -499,6 +551,9 @@ async function renderStartupCards() {
 
 function showStartupView() {
   stopDetailRefresh();
+  // Home / startup view assumes the detail pane owns the main grid cell; if
+  // search mode is covering it, tear it down first.
+  if (searchView.isActive()) fullTextSearch.clear();
   const pane = byId('detailPane');
   const messagesEl = byId('detailMessages');
   const headerEl = byId('detailHeader');
@@ -1441,6 +1496,10 @@ function renderSessionItem(s: SessionSummary): HTMLElement {
       const target = e.target as HTMLElement | null;
       if (target?.tagName === 'INPUT') return;
       hidePreview();
+      // Picking a session from the sidebar supersedes any active search — the
+      // detail pane and search pane occupy the same grid cell, so both being
+      // visible at once would overlap.
+      if (searchView.isActive()) fullTextSearch.clear();
       selectedSession = s.sessionId;
       knownTimestamps[s.sessionId] = s.lastTimestamp;
       syncActiveSessionItem(item);
@@ -2123,6 +2182,16 @@ function focusSessionByIndex(idx: number): void {
 // --- Init ---
 
 fullTextSearch.bindInputEvents(byId<HTMLInputElement>('search'), byId('searchClearBtn'));
+// Allow the user to navigate the result list without leaving the search input:
+// typing -> ArrowDown -> Enter flows entirely on the keyboard.
+byId<HTMLInputElement>('search').addEventListener('keydown', (e: KeyboardEvent) => {
+  if (!searchView.isActive()) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') {
+    if (searchView.handleKeyDown(e)) {
+      // Handled by searchView; nothing else to do.
+    }
+  }
+});
 byId('archiveSelectedBtn').addEventListener('click', () => actions.archiveSelected());
 byId('newSessionBtn').addEventListener('click', () => { void newSessionAction(); });
 
@@ -2167,6 +2236,25 @@ function applyZoom() {
   byId('detailPane').style.zoom = String(zoomLevel / 100);
 }
 
+// Search-mode arrow/Enter navigation runs in the capture phase so it beats
+// the session-list keyboard navigation registered below — when search is
+// active, arrows belong to the result list, not the sidebar.
+document.addEventListener('keydown', (e: KeyboardEvent) => {
+  if (!searchView.isActive()) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Enter') return;
+  const target = e.target as HTMLElement | null;
+  const globalSearch = byId<HTMLInputElement>('search');
+  // If focus is in an unrelated input (e.g. chat search), don't hijack keys.
+  if (target && target !== globalSearch &&
+      (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+    return;
+  }
+  if (searchView.handleKeyDown(e)) {
+    e.stopPropagation();
+  }
+}, true);
+
 initKeyboardNavigation({
   byId,
   getSelectedSession: () => selectedSession,
@@ -2182,6 +2270,7 @@ initShortcuts({
   byIdOptional,
   fullTextSearch,
   chatSearch,
+  isSearchMode: () => searchView.isActive(),
   getSelectedSession: () => selectedSession,
   getSelectedProject: () => selectedProject,
   setProjectFilter,

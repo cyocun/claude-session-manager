@@ -1,4 +1,4 @@
-use csm_core::models::{SearchHit, SearchIndexStatus};
+use csm_core::models::{SearchHit, SearchIndexStatus, SearchSort, SearchTimeRange};
 use csm_core::search::SearchIndex;
 use std::sync::Arc;
 
@@ -8,10 +8,21 @@ pub async fn search_sessions(
     query: String,
     project: Option<String>,
     limit: Option<usize>,
+    time_range: Option<SearchTimeRange>,
+    msg_types: Option<Vec<String>>,
+    sort: Option<SearchSort>,
 ) -> Result<Vec<SearchHit>, String> {
     let limit = limit.unwrap_or(50);
+    let sort = sort.unwrap_or_default();
     state
-        .search(&query, project.as_deref(), limit)
+        .search(
+            &query,
+            project.as_deref(),
+            limit,
+            time_range.as_ref(),
+            msg_types.as_deref(),
+            sort,
+        )
         .map_err(|e| e.to_string())
 }
 

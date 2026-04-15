@@ -2,7 +2,7 @@
 // Arrow/Tab navigation lives in layoutControls.ts and chat-search specific keys in chatSearch.ts —
 // this module owns the global, OS-standard shortcuts that previously lived scattered in app.ts.
 export function initShortcuts(deps) {
-    const { byId, byIdOptional, fullTextSearch, chatSearch, getSelectedSession, getSelectedProject, setProjectFilter, toggleTerminal, focusFirstSession, focusLastSession, isModalOpen, } = deps;
+    const { byId, byIdOptional, fullTextSearch, chatSearch, isSearchMode, getSelectedSession, getSelectedProject, setProjectFilter, toggleTerminal, focusFirstSession, focusLastSession, isModalOpen, } = deps;
     function focusInputAndSelect(el) {
         if (!el)
             return;
@@ -63,7 +63,7 @@ export function initShortcuts(deps) {
                 focusLastSession();
             return;
         }
-        // Escape: cascading close — modal > chat-search input > global-search input > project filter
+        // Escape: cascading close — modal > chat-search input > global-search input > search mode > project filter
         if (e.key === 'Escape') {
             if (isModalOpen())
                 return; // modal owns its own Escape
@@ -78,6 +78,13 @@ export function initShortcuts(deps) {
                     active.blur();
                     return;
                 }
+                return;
+            }
+            // Focus is elsewhere (e.g. user clicked a search result). Escape should
+            // still dismiss an active search before falling through to project filter.
+            if (isSearchMode()) {
+                e.preventDefault();
+                fullTextSearch.clear();
                 return;
             }
             if (getSelectedProject()) {
